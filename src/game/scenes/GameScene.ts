@@ -1,0 +1,175 @@
+import Phaser from "phaser";
+import { GAME, PALETTE } from "../config";
+import { Player } from "../entities/Player";
+
+/**
+ * First-scope playable scene: a dark forest clearing with a test floor and a
+ * few platforms. Establishes movement, jump, dash and camera follow.
+ * Story beats, combat, enemies and the Echo system are added in later steps.
+ */
+export class GameScene extends Phaser.Scene {
+  private player!: Player;
+  private solids!: Phaser.Physics.Arcade.StaticGroup;
+
+  constructor() {
+    super("GameScene");
+  }
+
+  create(): void {
+    this.physics.world.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
+    this.cameras.main.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
+    this.cameras.main.setBackgroundColor(PALETTE.black);
+
+    this.buildBackground();
+    this.buildTerrain();
+
+    this.player = new Player(this, 160, GAME.floorY - 60);
+    this.physics.add.collider(this.player, this.solids);
+
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.setDeadzone(220, 140);
+
+    this.buildAtmosphere();
+    this.buildHud();
+  }
+
+  /** Layered, parallax dark-forest backdrop using simple shapes + fog. */
+  private buildBackground(): void {
+    const { worldWidth } = GAME;
+    const h = GAME.height;
+
+    // Sky gradient bands (deep navy -> black), fixed-ish via low scroll factor.
+    const sky = this.add.rectangle(0, 0, worldWidth, GAME.worldHeight, PALETTE.deepNavy)
+      .setOrigin(0, 0)
+      .setScrollFactor(0.1)
+      .setDepth(-50);
+    sky.setAlpha(1);
+
+    // Moon
+    this.add.circle(GAME.width * 0.72, 90, 46, PALETTE.moon, 0.9)
+      .setScrollFactor(0.1)
+      .setDepth(-49);
+    this.add.circle(GAME.width * 0.72, 90, 70, PALETTE.moon, 0.08)
+      .setScrollFactor(0.1)
+      .setDepth(-49);
+
+    // Far tree line (silhouettes)
+    this.paintTreeLine(-30, worldWidth, h - 40, 0.3, PALETTE.black, 90, 26);
+    // Near tree line
+    this.paintTreeLine(-20, worldWidth, h + 10, 0.6, 0x080b12, 150, 40);
+  }
+
+  private paintTreeLine(
+    startX: number,
+    spanX: number,
+    baseY: number,
+    scroll: number,
+    color: number,
+    maxHeight: number,
+    step: number,
+  ): void {
+    const g = this.add.graphics().setScrollFactor(scroll).setDepth(-40);
+    g.fillStyle(color, 1);
+    for (let x = startX; x < startX + spanX; x += step) {
+      // Deterministic pseudo-variation (no RNG needed for a static backdrop).
+      const seed = Math.abs(Math.sin(x * 0.09)) ;
+      const treeH = maxHeight * (0.5 + seed * 0.6);
+      const treeW = step * 0.7;
+      g.fillTriangle(x, baseY, x + treeW / 2, baseY - treeH, x + treeW, baseY);
+      g.fillRect(x + treeW / 2 - 3, baseY - treeH * 0.3, 6, treeH * 0.3);
+    }
+  }
+
+  /** Ground floor + a few platforms to test jump/dash traversal. */
+  private buildTerrain(): void {
+    this.solids = this.physics.add.staticGroup();
+    const tile = 32;
+
+    // Continuous floor across the world.
+    const cols = Math.ceil(GAME.worldWidth / tile);
+    const floorRows = Math.ceil((GAME.worldHeight - GAME.floorY) / tile) + 1;
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < floorRows; r++) {
+        const img = this.solids.create(
+          c * tile + tile / 2,
+          GAME.floorY + r * tile + tile / 2,
+          "ground",
+        ) as Phaser.Physics.Arcade.Sprite;
+        img.setDepth(-5);
+        img.refreshBody();
+      }
+    }
+
+    // Floating platforms (x, y, widthInTiles).
+    const platforms: Array<[number, number, number]> = [
+      [520, 500, 4],
+      [760, 420, 3],
+      [1040, 470, 4],
+      [1360, 380, 3],
+      [1680, 460, 5],
+      [2100, 400, 4],
+      [2500, 480, 4],
+    ];
+    for (const [px, py, wTiles] of platforms) {
+      for (let i = 0; i < wTiles; i++) {
+        const img = this.solids.create(
+          px + i * tile,
+          py,
+          "ground",
+        ) as Phaser.Physics.Arcade.Sprite;
+        img.setDepth(-4);
+        img.refreshBody();
+      }
+    }
+  }
+
+  /** Fog overlay + subtle vignette for mood. */
+  private buildAtmosphere(): void {
+    // Foreground fog band near the floor.
+    const fog = this.add.rectangle(
+      0,
+      GAME.floorY - 30,
+      GAME.worldWidth,
+      120,
+      PALETTE.fog,
+      0.05,
+    )
+      .setOrigin(0, 0)
+      .setScrollFactor(0.8)
+      .setDepth(5);
+    this.tweens.add({
+      targets: fog,
+      alpha: { from: 0.04, to: 0.09 },
+      duration: 4000,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // Screen vignette (fixed to camera).
+    const vg = this.add.graphics().setScrollFactor(0).setDepth(100);
+    vg.fillStyle(PALETTE.black, 0.35);
+    vg.fillRect(0, 0, GAME.width, 60);
+    vg.fillRect(0, GAME.height - 60, GAME.width, 60);
+  }
+
+  private buildHud(): void {
+    const style: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: "monospace",
+      fontSize: "16px",
+      color: "#d8dce6",
+    };
+    this.add
+      .text(16, 14, "그림자가 걷는 밤 · Shadow Echo", { ...style, fontSize: "18px" })
+      .setScrollFactor(0)
+      .setDepth(101);
+    this.add
+      .text(16, 40, "A/D 또는 ←/→ 이동   ·   Space 점프   ·   Shift 대시", style)
+      .setScrollFactor(0)
+      .setDepth(101)
+      .setAlpha(0.85);
+  }
+
+  update(time: number): void {
+    this.player.update(time);
+  }
+}
