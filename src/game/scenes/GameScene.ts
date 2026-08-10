@@ -3,7 +3,10 @@ import { COMBAT, DEPTH, ECHO, GAME, PALETTE, WORLD } from "../config";
 import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
 import { Shadow } from "../entities/Shadow";
+import { Lever } from "../entities/Lever";
+import { Door } from "../entities/Door";
 import { ActionRecorder } from "../systems/ActionRecorder";
+import { InteractionSystem } from "../systems/InteractionSystem";
 
 /** Anything that can land a 2.5D sword hit (Player or Shadow). */
 interface MeleeAttacker {
@@ -30,6 +33,23 @@ export class GameScene extends Phaser.Scene {
   private hpPips!: Phaser.GameObjects.Graphics;
   private playerDeadHandled = false;
 
+  // --- Echo lever puzzle ---
+  private interaction!: InteractionSystem;
+  private lever!: Lever;
+  private door!: Door;
+  private leverPrompt!: Phaser.GameObjects.Text;
+  private echoHint!: Phaser.GameObjects.Text;
+  private echoHintAt = -1;
+  private puzzleComplete = false;
+  private readonly puzzle = {
+    leverX: 1300,
+    leverY: 520,
+    doorX: 1680,
+    doorY: 520,
+    triggerX: 1760,
+    doorOpenMs: 1000,
+  };
+
   constructor() {
     super("GameScene");
   }
@@ -37,6 +57,8 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.playerDeadHandled = false;
     this.enemies = [];
+    this.echoHintAt = -1;
+    this.puzzleComplete = false;
 
     this.cameras.main.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
     this.cameras.main.setBackgroundColor(PALETTE.black);
@@ -49,6 +71,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnEnemies();
     this.setupCombat();
     this.setupEcho();
+    this.buildPuzzle();
 
     // Camera follows the logical floor position, so jumping never bounces it.
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
@@ -119,11 +142,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnEnemies(): void {
+    // Kept clear of the puzzle zone (~1300-1760) so the lever/door read cleanly.
     const spawns: Array<[number, number]> = [
       [700, 470],
-      [1150, 560],
-      [1500, 500],
-      [1950, 470],
+      [1000, 560],
+      [2250, 500],
+      [2600, 470],
     ];
     for (const [x, y] of spawns) {
       this.enemies.push(new Enemy(this, x, y));
@@ -152,7 +176,70 @@ export class GameScene extends Phaser.Scene {
     this.shadow = new Shadow(this);
     this.shadow.onAttackStart = (facing, x, y, jumpZ) =>
       this.spawnSlash(facing, x, y - jumpZ - 6, true);
+    this.shadow.onInteract = (x, y) => this.onActorInteract(x, y, true);
     this.keyEcho = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+  }
+
+  /** Build the Echo lever + door puzzle. */
+  private buildPuzzle(): void {
+    this.interaction = new InteractionSystem();
+
+    this.lever = new Lever(this, this.puzzle.leverX, this.puzzle.leverY);
+    this.lever.onActivate = () => this.door.open(this.time.now, this.puzzle.doorOpenMs);
+    this.interaction.register(this.lever);
+
+    this.door = new Door(this, this.puzzle.doorX, this.puzzle.doorY);
+
+    // Prompt hovering over the lever.
+    this.leverPrompt = this.add
+      .text(this.puzzle.leverX, this.puzzle.leverY - 78, "[E] 레버 작동", {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#e8c976",
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(DEPTH.vfx)
+      .setVisible(false);
+
+    // Failure -> echo hint (screen-fixed, dark fairy-tale tone).
+    this.echoHint = this.add
+      .text(GAME.width / 2, GAME.height - 96, "", {
+        fontFamily: "monospace",
+        fontSize: "16px",
+        color: "#d8dce6",
+        align: "center",
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(DEPTH.hud)
+      .setAlpha(0.9)
+      .setVisible(false);
+  }
+
+  /** Route an interact from either the Player or a replaying Shadow. */
+  private onActorInteract(x: number, y: number, isShadow: boolean): void {
+    const target = this.interaction.interactAt(x, y);
+    if (!target) return;
+    this.spawnPulse(target.worldX, target.worldY);
+    if (target === this.lever && !isShadow && !this.puzzleComplete) {
+      // Reveal the echo hint the first time the player pulls the lever solo.
+      if (this.echoHintAt < 0) this.echoHintAt = this.time.now;
+    }
+  }
+
+  /** Soft pulse ring when a lever is interacted with. */
+  private spawnPulse(x: number, y: number): void {
+    const ring = this.add
+      .circle(x, y - 20, 8, PALETTE.echoGold, 0.5)
+      .setDepth(DEPTH.vfx)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: ring,
+      scale: { from: 0.6, to: 2.6 },
+      alpha: { from: 0.5, to: 0 },
+      duration: 360,
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private spawnSlash(facing: -1 | 1, x: number, y: number, echo: boolean): void {
@@ -203,7 +290,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(DEPTH.hud);
     this.add
-      .text(16, 40, "A/D·←/→ 좌우  ·  W/S·↑/↓ 앞뒤  ·  Space 점프  ·  Shift 대시  ·  J 공격  ·  Q 잔영", style)
+      .text(16, 40, "A/D·←/→ 좌우 · W/S·↑/↓ 앞뒤 · Space 점프 · Shift 대시 · J 공격 · E 상호작용 · Q 잔영", style)
       .setScrollFactor(0)
       .setDepth(DEPTH.hud)
       .setAlpha(0.85);
@@ -238,7 +325,11 @@ export class GameScene extends Phaser.Scene {
       isDashing: s.isDashing,
       attackActive: s.attackActive,
       swingId: s.swingId,
+      interact: s.interact,
     });
+
+    // Player interact goes through the same path the Shadow will replay.
+    if (s.interact) this.onActorInteract(this.player.worldX, this.player.worldY, false);
 
     // Q replays the last ~3s as an Echo Shadow (ignored while one is playing).
     if (
@@ -258,6 +349,11 @@ export class GameScene extends Phaser.Scene {
     // Both the player and the replaying Shadow can land sword hits.
     this.applyAttack(this.player, "player", time);
     if (this.shadow.isReplaying) this.applyAttack(this.shadow, "shadow", time);
+
+    // Door lifecycle + player blocking + puzzle completion + hints.
+    this.door.update(time);
+    this.door.collide(this.player);
+    this.updatePuzzle(time);
 
     this.updateHud();
 
@@ -290,6 +386,36 @@ export class GameScene extends Phaser.Scene {
       e.takeDamage(COMBAT.attackDamage, attacker.worldX, attacker.worldY, time);
       this.hitParticles.emitParticleAt(e.worldX, e.worldY - e.jumpZ - 8, 12);
       this.cameras.main.shake(70, 0.005);
+    }
+  }
+
+  /** Lever prompt, echo hint state machine, and puzzle completion. */
+  private updatePuzzle(time: number): void {
+    // Completion: player reaches the far side of the gate.
+    if (!this.puzzleComplete && this.player.worldX > this.puzzle.triggerX) {
+      this.puzzleComplete = true;
+      this.door.lockOpen(time);
+      this.leverPrompt.setVisible(false);
+      this.echoHint.setVisible(false);
+    }
+
+    if (this.puzzleComplete) return;
+
+    // Lever prompt shows only when the player stands in interaction range.
+    const inRange =
+      Math.abs(this.player.worldX - this.lever.worldX) <= this.lever.interactionRangeX &&
+      Math.abs(this.player.worldY - this.lever.worldY) <= this.lever.interactionRangeY;
+    this.leverPrompt.setVisible(inRange);
+
+    // After the first solo lever pull, surface the echo hint (two beats).
+    if (this.echoHintAt >= 0) {
+      this.echoHint.setVisible(true);
+      const elapsed = time - this.echoHintAt;
+      this.echoHint.setText(
+        elapsed > 1400
+          ? "방금 한 행동은 아직 남아 있다.\n\n[Q] 잔영 재현"
+          : "방금 한 행동은 아직 남아 있다.",
+      );
     }
   }
 }

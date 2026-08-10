@@ -17,6 +17,8 @@ export interface PlayerInputState {
   jump: boolean;
   dash: boolean;
   attack: boolean;
+  /** One-shot: true only on the frame E was pressed. */
+  interact: boolean;
   facing: -1 | 1;
 }
 
@@ -37,6 +39,8 @@ export interface PlayerState {
   /** True only during the damaging window of a swing (for Shadow replay). */
   attackActive: boolean;
   swingId: number;
+  /** One-shot: true only on the frame E was pressed. */
+  interact: boolean;
 }
 
 type Keys = {
@@ -51,6 +55,7 @@ type Keys = {
   jump: Phaser.Input.Keyboard.Key;
   dash: Phaser.Input.Keyboard.Key;
   attack: Phaser.Input.Keyboard.Key;
+  interact: Phaser.Input.Keyboard.Key;
 };
 
 /**
@@ -101,6 +106,7 @@ export class Player extends Phaser.GameObjects.Container {
   private moveX = 0;
   private moveY = 0;
   private attackActiveNow = false;
+  private interactNow = false;
 
   public inputState: PlayerInputState = {
     moveX: 0,
@@ -108,6 +114,7 @@ export class Player extends Phaser.GameObjects.Container {
     jump: false,
     dash: false,
     attack: false,
+    interact: false,
     facing: 1,
   };
 
@@ -136,6 +143,7 @@ export class Player extends Phaser.GameObjects.Container {
       jump: kb.addKey(K.SPACE),
       dash: kb.addKey(K.SHIFT),
       attack: kb.addKey(K.J),
+      interact: kb.addKey(K.E),
     };
     kb.addCapture([K.SPACE, K.SHIFT, K.UP, K.DOWN, K.LEFT, K.RIGHT, K.W, K.A, K.S, K.D]);
 
@@ -165,7 +173,7 @@ export class Player extends Phaser.GameObjects.Container {
     if (this.isDead) {
       this.integrateZ(dt);
       this.applyVisuals(time);
-      this.inputState = { moveX: 0, moveY: 0, jump: false, dash: false, attack: false, facing: this.facing };
+      this.inputState = { moveX: 0, moveY: 0, jump: false, dash: false, attack: false, interact: false, facing: this.facing };
       return;
     }
 
@@ -259,6 +267,9 @@ export class Player extends Phaser.GameObjects.Container {
     if (this.isAttacking && time >= this.attackEndsAt) this.isAttacking = false;
     this.attackActiveNow = this.isAttackActive(time);
 
+    // --- Interact (one-shot on keydown) ---
+    this.interactNow = Phaser.Input.Keyboard.JustDown(this.keys.interact);
+
     this.applyVisuals(time);
 
     this.inputState = {
@@ -267,6 +278,7 @@ export class Player extends Phaser.GameObjects.Container {
       jump: jumpStarted,
       dash: dashStarted,
       attack: attackStarted,
+      interact: this.interactNow,
       facing: this.facing,
     };
   }
@@ -365,6 +377,7 @@ export class Player extends Phaser.GameObjects.Container {
       isAttacking: this.isAttacking,
       attackActive: this.attackActiveNow,
       swingId: this.swingId,
+      interact: this.interactNow,
     };
   }
 }

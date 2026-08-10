@@ -14,6 +14,8 @@ export interface ActionFrame {
   attackActive: boolean;
   /** Player swing id at this frame (a change marks a new swing). */
   swingId: number;
+  /** True only on the single frame an interact (E) was pressed. */
+  interact: boolean;
 }
 
 /**

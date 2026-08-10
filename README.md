@@ -66,6 +66,12 @@ npm run preview    # 빌드 결과 로컬 미리보기
 - 재현 중에도 플레이어는 자유롭게 이동; Shadow의 공격도 적에게 적중(협공)
 - 창백한 금빛 잔영 톤, 재현 종료 시 사라짐
 
+**Echo 레버 퍼즐**
+- `E` 상호작용(누른 순간 1회) — 공통 `InteractionSystem`으로 Player/Shadow 동일 처리
+- Lever(작동 시 Door 열림) + Door(2~3초 후 자동 닫힘, 닫히면 통과 불가)
+- 혼자서는 조금 늦게 도착해 실패 → `Q`로 Shadow가 과거의 레버 작동을 재현해 성공
+- Shadow의 레버 작동은 고정 연출이 아니라 실제 기록→재생 결과
+
 **기반**
 - Phaser + TypeScript + Vite, 카메라 추적, 다층 Parallax 배경
 - GitHub Pages 빌드/배포 설정 (`.github/workflows/deploy.yml`)
@@ -75,7 +81,6 @@ npm run preview    # 빌드 결과 로컬 미리보기
 
 ## 이후 구현 예정
 
-- 레버 퍼즐
 - 두 번째 전투 + Adaptive Shadow (AGGRESSIVE / CAUTIOUS 분류에 따른 선제 지원 행동)
 - 스토리 시퀀스 및 "이렇게 할 거였잖아." → 마을 → TO BE CONTINUED
 
@@ -89,8 +94,8 @@ src/
   game/
     config.ts          # 게임 설정 · 팔레트 · 좌표/물리/전투 상수
     scenes/            # BootScene, GameScene
-    entities/          # Player, Enemy (Container 기반 2.5D 액터)
-    systems/           # space.ts (perspective/depth 헬퍼) · (예정) Echo, Adaptive Shadow
+    entities/          # Player, Enemy, Shadow, Lever, Door (Container 기반 2.5D)
+    systems/           # space.ts, ActionRecorder.ts, InteractionSystem.ts
     ui/                # (예정) HUD, 대사창
   styles/
 public/assets/         # characters / enemies / environment / ui / audio / effects

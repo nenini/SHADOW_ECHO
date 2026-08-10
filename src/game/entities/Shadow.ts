@@ -31,6 +31,8 @@ export class Shadow extends Phaser.GameObjects.Container {
 
   /** Fired when a replayed swing begins, so GameScene can spawn the slash VFX. */
   public onAttackStart?: (facing: -1 | 1, x: number, y: number, jumpZ: number) => void;
+  /** Fired on a replayed interact frame, routed to the InteractionSystem. */
+  public onInteract?: (x: number, y: number) => void;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0);
@@ -82,6 +84,9 @@ export class Shadow extends Phaser.GameObjects.Container {
         this.onAttackStart?.(this.facing, this.x, this.y, this.jumpZ);
       }
     }
+
+    // Replayed interact fires the same InteractionSystem path the player uses.
+    if (f.interact) this.onInteract?.(this.x, this.y);
 
     this.index++;
     if (this.index >= this.frames.length) this.endReplay();
