@@ -11,6 +11,7 @@ import { PlayerProfile, type PlayStyle } from "../systems/PlayerProfile";
 import { SUPPORT } from "../config";
 import { Mara } from "../entities/Mara";
 import { Dialogue } from "../ui/Dialogue";
+import { sfx } from "../systems/Sfx";
 
 /** Anything that can land a 2.5D sword hit (Player or Shadow). */
 interface MeleeAttacker {
@@ -277,7 +278,11 @@ export class GameScene extends Phaser.Scene {
     this.interaction = new InteractionSystem();
 
     this.lever = new Lever(this, this.puzzle.leverX, this.puzzle.leverY);
-    this.lever.onActivate = () => this.door.open(this.time.now, this.puzzle.doorOpenMs);
+    this.lever.onActivate = () => {
+      sfx.lever();
+      sfx.door();
+      this.door.open(this.time.now, this.puzzle.doorOpenMs);
+    };
     this.interaction.register(this.lever);
 
     this.door = new Door(this, this.puzzle.doorX, this.puzzle.doorY);
@@ -450,11 +455,22 @@ export class GameScene extends Phaser.Scene {
 
     // --- PlayerProfile metrics (real play log) ---
     const inp = this.player.inputState;
-    if (inp.attack) this.profile.attackCount++;
-    if (inp.dash) this.profile.dashCount++;
-    if (inp.jump) this.profile.jumpCount++;
+    if (inp.attack) {
+      this.profile.attackCount++;
+      sfx.attack();
+    }
+    if (inp.dash) {
+      this.profile.dashCount++;
+      sfx.dash();
+      this.hitParticles.emitParticleAt(this.player.worldX, this.player.worldY, 5);
+    }
+    if (inp.jump) {
+      this.profile.jumpCount++;
+      sfx.jump();
+    }
     if (this.player.hp < this.lastPlayerHp) {
       this.profile.damageTaken += this.lastPlayerHp - this.player.hp;
+      sfx.hurt();
     }
     this.lastPlayerHp = this.player.hp;
     let nearest = Infinity;
@@ -474,6 +490,7 @@ export class GameScene extends Phaser.Scene {
     ) {
       this.shadow.startReplay(this.recorder.snapshot());
       this.profile.echoUseCount++;
+      sfx.echo();
     }
     this.shadow.update(time, delta);
 
@@ -524,6 +541,8 @@ export class GameScene extends Phaser.Scene {
       e.takeDamage(COMBAT.attackDamage, attacker.worldX, attacker.worldY, time);
       this.hitParticles.emitParticleAt(e.worldX, e.worldY - e.jumpZ - 8, 12);
       this.cameras.main.shake(70, 0.005);
+      if (e.isDead) sfx.enemyDeath();
+      else sfx.hit();
     }
   }
 
@@ -560,6 +579,7 @@ export class GameScene extends Phaser.Scene {
       if (target) target.distractTo(this.shadow.worldX, this.shadow.worldY, now, SUPPORT.tauntMs);
       this.spawnPulse(this.shadow.worldX, this.shadow.worldY);
     }
+    sfx.support();
     this.showShadowLine();
   }
 

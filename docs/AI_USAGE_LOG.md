@@ -11,7 +11,8 @@
 | 2026-08-10 | Claude Code | Echo 레버 퍼즐 | Echo interaction recording / Shadow interaction replay / Lever·Door 퍼즐 구현(고정 연출 아닌 실제 record→replay 결과). Adaptive/스토리 제외 | ActionFrame에 interact(1회성) 추가·Player E키(JustDown)·systems/InteractionSystem(Interactable)·entities/Lever·Door·Shadow.onInteract·GameScene 퍼즐/블로킹/힌트/완료. 검증: E 범위/깊이/1회성, 문 자동닫힘, 문 닫힌 상태에서 Q→Shadow가 레버(x=1300) 도달 시 문 열림→플레이어 통과→완료, 기존 전투/이동 정상 | 힌트 상태머신·솔로 실패(~0.5초) 튜닝, 검증 시 도어 잔류개방 confound 제거 후 재확인 |
 | 2026-08-10 | Claude Code | 적응형 Shadow | 두 번째 전투 + PlayerProfile 수집 + AGGRESSIVE/CAUTIOUS 분류 + 분류에 따른 Shadow 독립 지원 행동 1회 + "이렇게 할 거였잖아." (실제 로그 기반, 고정연출 아님) | systems/PlayerProfile.ts(6지표+classify)·Enemy stagger/distractTo·Shadow.startSupport(독립 이동·행동)·GameScene 지표수집/2차전투 마지막 감지/지원트리거/자막. 검증: classify(근접+공격→AGGRESSIVE / 원거리+저피격→CAUTIOUS), AGG=경직·CAU=시선끌기 분기, end-to-end 두 스타일 모두 Shadow가 실제 분류대로 독립 행동+대사, 기존 전투/에코/퍼즐 무회귀 | 검증 시 라이브 거리샘플링·트리거 타이밍 confound 분리 후 확인 |
 | 2026-08-10 | Claude Code | 스토리 시퀀스 | 마을 입구 → 마라 대사("네 그림자는 아니란다.") → 암전 → "잔영 보존 실험 37차 — 대상 HARIN" → TO BE CONTINUED 구현(Vertical Slice 마무리) | BootScene mara 텍스처·entities/Mara·ui/Dialogue(키 진행 대사박스)·GameScene 마을/트리거/컷신 정지/페이드/엔딩카드/R 재시작. 검증: 마을 도달 시 트리거·게임정지·5줄 대사 순서·완료 후 암전 시작 | tween/타이머 연출은 실제 rAF에서 완료(수동 스텝 검증 한계) |
-| | Claude Code | GitHub Pages | | | |
+| 2026-08-10 | Claude Code | GitHub Pages | 원격 저장소 연결 + push, Actions 배포 파이프라인 | remote 연결(nenini/SHADOW_ECHO), stub README를 실제 히스토리로 교체 후 push. 배포 워크플로 실행 확인(build 성공, deploy는 Pages 소스 미지정으로 실패 → Settings에서 Source=GitHub Actions 지정 필요) | — |
+| 2026-08-10 | Claude Code | 폴리시(사운드/VFX) | 절차적 사운드(SFX) + 소소한 VFX 추가(외부 에셋 없이 Web Audio 합성) | systems/Sfx.ts(oscillator/noise 합성 싱글톤: jump/dash/attack/hit/death/hurt/echo/lever/door/support)·GameScene 이벤트 지점 연결·대시 파티클 퍼프. 검증: 입력 구동 시 예외 0·콘솔 클린·AudioContext 초기화 | 사운드 톤은 짧고 어두운 다크페어리테일 톤으로 튜닝 |
 
 ## 기록 원칙
 
