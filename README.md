@@ -40,26 +40,36 @@ npm run preview    # 빌드 결과 로컬 미리보기
 | 키 | 동작 |
 |---|---|
 | `A` / `D` 또는 `←` / `→` | 좌우 이동 |
+| `W` / `S` 또는 `↑` / `↓` | 앞뒤 이동 (바닥 평면 depth) |
 | `Space` | 점프 |
-| `Shift` | 대시 |
+| `Shift` | 대시 (8방향) |
+| `J` | 공격 |
 
-## 현재 구현 범위 (1차)
+## 현재 구현 범위
 
-- Phaser + TypeScript + Vite 프로젝트 초기화
-- 프로젝트 폴더 구조
-- 다크 페어리테일 톤의 기본 게임 화면 (달빛/숲 실루엣/안개)
-- 테스트용 바닥 + 점프/대시 확인용 플랫폼
-- 플레이어(하린) 좌우 이동 / 점프 / 대시
-- 카메라 추적
+**Pseudo-2.5D 벨트스크롤 기반**
+- 좌표 모델: `(worldX, worldY)` = 바닥 평면, `jumpZ` = 가상 점프 높이 (전역 중력 없음)
+- 8방향 이동(대각선 normalize) + 제한된 belt 전투 공간(worldY 앞뒤 범위)
+- 수동 Z축 점프(코요테/버퍼/가변 높이) — 점프해도 worldY·depth 불변
+- 바닥 그림자(점프 시 축소·투명), worldY 기반 perspective scaling
+- worldY 기반 동적 depth sorting (아래쪽이 앞)
+
+**전투 (2.5D 대응)**
+- 검 공격(J): X 범위 + worldY depth 허용치 + 점프 높이 조건 판정, 스윙당 1회
+- 길 잃은 순례자: 평면 배회 → 감지 시 X/Y 추적 → 근접 공격(텔레그래프)
+- 플레이어 HP·i-frame·2D 넉백, 적 HP·넉백·사망
+- 히트 파티클/슬래시 VFX/화면 흔들림, HP UI
+
+**기반**
+- Phaser + TypeScript + Vite, 카메라 추적, 다층 Parallax 배경
 - GitHub Pages 빌드/배포 설정 (`.github/workflows/deploy.yml`)
 
-플레이어와 지형은 코드로 생성한 임시 플레이스홀더 텍스처입니다. 최종 제출 전에
+플레이어·적·지형은 코드로 생성한 임시 플레이스홀더 텍스처입니다. 최종 제출 전에
 픽셀아트 에셋으로 교체하며, 외부 에셋은 [`docs/ASSET_LICENSES.md`](docs/ASSET_LICENSES.md)에 기록합니다.
 
 ## 이후 구현 예정
 
-- 검 공격 / 적(길 잃은 순례자) / HP·피격·넉백
-- 잔영(Echo) 기록·재생 시스템 (Q)
+- 잔영(Echo) 기록·재생 시스템 (Q) — `Player.getState()`가 worldX/Y/jumpZ/action을 노출
 - 레버 퍼즐
 - 두 번째 전투 + Adaptive Shadow (AGGRESSIVE / CAUTIOUS 분류에 따른 선제 지원 행동)
 - 스토리 시퀀스 및 "이렇게 할 거였잖아." → 마을 → TO BE CONTINUED
@@ -72,10 +82,10 @@ npm run preview    # 빌드 결과 로컬 미리보기
 src/
   main.ts              # Phaser 부트스트랩
   game/
-    config.ts          # 게임 설정 · 팔레트 · 튜닝 상수
+    config.ts          # 게임 설정 · 팔레트 · 좌표/물리/전투 상수
     scenes/            # BootScene, GameScene
-    entities/          # Player
-    systems/           # (예정) Echo 기록/재생, Adaptive Shadow
+    entities/          # Player, Enemy (Container 기반 2.5D 액터)
+    systems/           # space.ts (perspective/depth 헬퍼) · (예정) Echo, Adaptive Shadow
     ui/                # (예정) HUD, 대사창
   styles/
 public/assets/         # characters / enemies / environment / ui / audio / effects

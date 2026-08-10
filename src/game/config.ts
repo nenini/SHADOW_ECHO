@@ -20,51 +20,104 @@ export const PALETTE = {
   harin: 0xcfd6e0, // player body (placeholder tone)
 } as const;
 
-/** Core tunable gameplay constants, kept in one place. */
+/** Screen / world extents. */
 export const GAME = {
   width: 960,
   height: 540,
-  gravityY: 1400,
-  // Player movement
-  moveSpeed: 280,
-  // Jump: apex height = jumpVelocity^2 / (2*gravityY).
-  // 660^2 / 2800 ~= 155px, comfortably above the ~100px platform steps.
-  jumpVelocity: -660,
-  // Releasing jump early cuts upward velocity for a variable-height jump.
-  jumpCutMultiplier: 0.45,
-  // Grace windows that make platforming forgiving (in ms).
-  coyoteMs: 100,
-  jumpBufferMs: 120,
-  dashSpeed: 640,
-  dashDurationMs: 160,
-  dashCooldownMs: 520,
-  // World
   worldWidth: 3200,
   worldHeight: 720,
-  floorY: 620,
 } as const;
 
-/** Combat tuning, kept separate from movement for clarity. */
+/**
+ * Pseudo-2.5D coordinate space. Actors live on a floor plane addressed by
+ * (worldX, worldY); jumpZ is a separate virtual height above that plane.
+ * worldY is the belt-scroll depth band: smaller = far/back, larger = near/front.
+ */
+export const WORLD = {
+  xMin: 60,
+  xMax: 3140,
+  yMin: 430, // back edge of the walkable floor (screen-space y of the plane)
+  yMax: 610, // front edge
+} as const;
+
+/** Planar movement + dash. */
+export const MOVE = {
+  speed: 250, // px/s on the floor plane (used for both axes, then normalized)
+  dashSpeed: 620,
+  dashDurationMs: 170,
+  dashCooldownMs: 520,
+} as const;
+
+/**
+ * Manual Z-axis jump physics (no Arcade gravity). Numbers mirror the old
+ * side-view feel: apex = jumpVelocityZ^2 / (2*gravityZ) ~= 155px.
+ */
+export const JUMP = {
+  gravityZ: 1400,
+  jumpVelocityZ: 660,
+  cutMultiplier: 0.45,
+  coyoteMs: 100,
+  bufferMs: 120,
+  maxShadowFadeZ: 160, // jumpZ at which the ground shadow is smallest/faintest
+} as const;
+
+/** Subtle depth cue: actors near the front (higher worldY) are slightly bigger. */
+export const PERSPECTIVE = {
+  scaleFar: 0.9, // at WORLD.yMin
+  scaleNear: 1.05, // at WORLD.yMax
+} as const;
+
+/**
+ * Render layers. Background/foreground/HUD keep fixed depths; gameplay actors
+ * are sorted dynamically by worldY (see systems/space.ts) between fog and vfx.
+ */
+export const DEPTH = {
+  ground: -10,
+  fog: -5,
+  actorBase: 0, // actor depth = actorBase + worldY  (~430..610)
+  vfx: 5000,
+  vignette: 9000,
+  hud: 10000,
+} as const;
+
+/** Ground shadow footprint. */
+export const SHADOW = {
+  width: 26,
+  height: 10,
+  alpha: 0.38,
+} as const;
+
+/** Combat tuning (2.5D-aware). */
 export const COMBAT = {
-  // Player attack (sword slash)
+  // Player sword
   attackCooldownMs: 360,
   attackWindupMs: 40,
   attackActiveMs: 130,
-  attackReach: 30, // horizontal extent in front of the player
-  attackHalfHeight: 22,
+  attackReach: 34, // forward reach in worldX
+  attackDepthTolerance: 26, // max |dworldY| for a hit to land
+  attackMaxTargetZ: 60, // enemies higher than this jumpZ are missed
   attackDamage: 1,
-  attackKnockback: 300,
+  attackKnockback: 300, // planar knockback speed applied to enemies (px/s)
   // Player health
   playerMaxHp: 5,
   playerInvulnMs: 850,
-  playerHurtKnockback: 320,
-  playerHurtLiftY: -220,
+  playerHurtKnockback: 300, // planar knockback speed when hurt (px/s)
+  // Contact / proximity tolerances (used by enemy melee strike)
+  hitDepthTolerance: 24, // |dworldY|
+  hitHeightTolerance: 46, // |djumpZ|
   // Enemy (Lost Pilgrim)
   enemyMaxHp: 3,
-  enemyPatrolSpeed: 55,
+  enemyWanderSpeed: 55,
+  enemyChaseSpeed: 95,
+  enemyDetectRange: 320, // planar distance to start chasing
+  enemyStrikeRangeX: 42,
+  enemyStrikeRangeY: 26,
+  enemyAttackWindupMs: 230,
+  enemyAttackCooldownMs: 900,
   enemyTouchDamage: 1,
   enemyHurtKnockback: 240,
-  enemyHitstopMs: 70,
+  // Shared knockback decay (higher = snappier stop)
+  knockbackDecayPerSec: 8,
 } as const;
 
 export function createGameConfig(parent: string): Phaser.Types.Core.GameConfig {
@@ -79,13 +132,7 @@ export function createGameConfig(parent: string): Phaser.Types.Core.GameConfig {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    physics: {
-      default: "arcade",
-      arcade: {
-        gravity: { x: 0, y: GAME.gravityY },
-        debug: false,
-      },
-    },
+    // No global physics: jump uses a manual Z axis and combat uses geometry.
     scene: [BootScene, GameScene],
   };
 }

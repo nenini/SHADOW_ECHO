@@ -1,99 +1,182 @@
 import Phaser from "phaser";
-import { COMBAT } from "../config";
+import { COMBAT, SHADOW } from "../config";
+import type { Player } from "./Player";
+import {
+  actorDepth,
+  clampWorldX,
+  clampWorldY,
+  perspectiveScale,
+} from "../systems/space";
 
 /**
- * "Lost Pilgrim" — a headless jansang (residual echo) that walks the same
- * stretch of path forever, lantern in hand. It patrols between two x bounds and
- * turns around at the edges. Combat resolution (contact damage, being hit) is
- * driven by GameScene; this class owns patrol movement and its own health.
+ * "Lost Pilgrim" in Pseudo-2.5D. Roams a stretch of the floor plane; when the
+ * player enters its detection range it chases across (worldX, worldY); when the
+ * player is within strike range it winds up and lands a melee hit. No Arcade
+ * physics — movement is manual on the plane, consistent with the Player.
  */
-export class Enemy extends Phaser.Physics.Arcade.Sprite {
+export class Enemy extends Phaser.GameObjects.Container {
+  private readonly sprite: Phaser.GameObjects.Sprite;
+  private readonly shadow: Phaser.GameObjects.Ellipse;
+  private readonly glow: Phaser.GameObjects.Ellipse;
+
   public hp: number;
   public readonly maxHp: number;
   public isDead = false;
-  /** The player's swing id that last damaged this enemy (dedupe per swing). */
+  public jumpZ = 0; // pilgrims stay grounded; kept for a uniform actor interface
+  /** The player's swing id that last hit this enemy (per-swing dedupe). */
   public lastHitSwing = -1;
 
-  private readonly minX: number;
-  private readonly maxX: number;
-  private dir: -1 | 1 = 1;
-  private knockbackUntil = 0;
-  private glow: Phaser.GameObjects.Arc;
+  private facing: -1 | 1 = 1;
+  private wanderDir: -1 | 1 = 1;
+  private readonly wanderMin: number;
+  private readonly wanderMax: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, patrolRadius = 120) {
-    super(scene, x, y, "pilgrim");
+  private attackReadyAt = 0;
+  private attackStrikeAt = -1;
+  private hurtUntil = 0;
+
+  private kbVX = 0;
+  private kbVY = 0;
+
+  constructor(scene: Phaser.Scene, worldX: number, worldY: number, wanderRadius = 130) {
+    super(scene, worldX, worldY);
     scene.add.existing(this);
-    scene.physics.add.existing(this);
 
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(18, 32);
-    body.setOffset(3, 4);
-    body.setCollideWorldBounds(true);
-    this.setDepth(9);
+    this.shadow = scene.add
+      .ellipse(0, 0, SHADOW.width, SHADOW.height, 0x000000, SHADOW.alpha)
+      .setOrigin(0.5, 0.5);
+    // Faint danger glow from the lantern (offset to the carrying arm).
+    this.glow = scene.add.ellipse(8, 2, 26, 20, 0xf0a060, 0.14).setOrigin(0.5, 0.5);
+    this.sprite = scene.add.sprite(0, 0, "pilgrim").setOrigin(0.5, 0.5);
+    this.add([this.shadow, this.glow, this.sprite]);
 
-    this.minX = x - patrolRadius;
-    this.maxX = x + patrolRadius;
+    this.wanderMin = clampWorldX(worldX - wanderRadius);
+    this.wanderMax = clampWorldX(worldX + wanderRadius);
     this.maxHp = COMBAT.enemyMaxHp;
     this.hp = this.maxHp;
 
-    // Faint danger glow from the lantern.
-    this.glow = scene.add.circle(x, y + 4, 16, 0xf0a060, 0.12).setDepth(8);
-    this.on(Phaser.GameObjects.Events.DESTROY, () => this.glow.destroy());
+    this.applyVisuals();
   }
 
-  /** Apply a hit: damage, knockback away from the attacker, and a flash. */
-  takeDamage(amount: number, fromX: number, time: number): void {
+  get worldX(): number {
+    return this.x;
+  }
+  get worldY(): number {
+    return this.y;
+  }
+
+  update(time: number, deltaMs: number, player: Player): void {
+    const dt = deltaMs / 1000;
+    this.applyKnockback(dt);
+    if (this.isDead) return;
+
+    if (time >= this.hurtUntil) {
+      this.think(time, dt, player);
+    }
+    this.applyVisuals();
+  }
+
+  private think(time: number, dt: number, player: Player): void {
+    const dx = player.worldX - this.x;
+    const dy = player.worldY - this.y;
+    const dist = Math.hypot(dx, dy);
+    const inStrike =
+      Math.abs(dx) <= COMBAT.enemyStrikeRangeX &&
+      Math.abs(dy) <= COMBAT.enemyStrikeRangeY;
+
+    // Resolve an in-progress wind-up.
+    if (this.attackStrikeAt > 0) {
+      if (time >= this.attackStrikeAt) {
+        if (inStrike && player.jumpZ <= COMBAT.hitHeightTolerance) {
+          player.takeDamage(COMBAT.enemyTouchDamage, this.x, this.y, time);
+        }
+        this.attackStrikeAt = -1;
+        this.attackReadyAt = time + COMBAT.enemyAttackCooldownMs;
+        this.sprite.clearTint();
+      }
+      return; // hold position during the telegraph
+    }
+
+    if (inStrike && time >= this.attackReadyAt) {
+      // Begin a telegraphed strike.
+      this.attackStrikeAt = time + COMBAT.enemyAttackWindupMs;
+      this.facing = dx >= 0 ? 1 : -1;
+      this.sprite.setTint(0xff6a6a);
+      return;
+    }
+
+    if (dist <= COMBAT.enemyDetectRange) {
+      // Chase across the plane.
+      const len = dist || 1;
+      this.x = clampWorldX(this.x + (dx / len) * COMBAT.enemyChaseSpeed * dt);
+      this.y = clampWorldY(this.y + (dy / len) * COMBAT.enemyChaseSpeed * dt);
+      if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+      return;
+    }
+
+    // Wander along the home stretch.
+    if (this.x <= this.wanderMin) this.wanderDir = 1;
+    else if (this.x >= this.wanderMax) this.wanderDir = -1;
+    this.x = clampWorldX(this.x + this.wanderDir * COMBAT.enemyWanderSpeed * dt);
+    this.facing = this.wanderDir;
+  }
+
+  private applyKnockback(dt: number): void {
+    if (this.kbVX === 0 && this.kbVY === 0) return;
+    this.x = clampWorldX(this.x + this.kbVX * dt);
+    this.y = clampWorldY(this.y + this.kbVY * dt);
+    const decay = Math.min(1, COMBAT.knockbackDecayPerSec * dt);
+    this.kbVX -= this.kbVX * decay;
+    this.kbVY -= this.kbVY * decay;
+    if (Math.abs(this.kbVX) < 2) this.kbVX = 0;
+    if (Math.abs(this.kbVY) < 2) this.kbVY = 0;
+  }
+
+  private applyVisuals(): void {
+    this.sprite.setFlipX(this.facing === -1);
+    this.setScale(perspectiveScale(this.y));
+    this.setDepth(actorDepth(this.y));
+  }
+
+  /** Take a hit from a source at (fromX, fromY): damage, knockback, flash. */
+  takeDamage(amount: number, fromX: number, fromY: number, time: number): void {
     if (this.isDead) return;
     this.hp -= amount;
 
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    const away = this.x >= fromX ? 1 : -1;
-    body.setVelocityX(away * COMBAT.enemyHurtKnockback);
-    body.setVelocityY(-140);
-    this.knockbackUntil = time + 220;
+    const dx = this.x - fromX;
+    const dy = this.y - fromY;
+    const len = Math.hypot(dx, dy) || 1;
+    this.kbVX = (dx / len) * COMBAT.enemyHurtKnockback;
+    this.kbVY = (dy / len) * COMBAT.enemyHurtKnockback;
+    this.hurtUntil = time + 220;
+    this.attackStrikeAt = -1;
 
     if (this.hp <= 0) {
       this.die();
       return;
     }
-    // Hit flash
-    this.setTintFill(0xffffff);
+    this.sprite.setTintFill(0xffffff);
     this.scene.time.delayedCall(70, () => {
-      if (this.active) this.clearTint();
+      if (this.active && !this.isDead) this.sprite.clearTint();
     });
   }
 
   private die(): void {
     this.isDead = true;
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.checkCollision.none = true;
-    this.setTintFill(0xffffff);
+    this.sprite.setTintFill(0xffffff);
     this.scene.tweens.add({
-      targets: this,
+      targets: this.sprite,
       alpha: 0,
-      angle: this.dir * 60,
-      y: this.y + 6,
+      angle: this.facing * 70,
+      y: 6,
       duration: 260,
       ease: "Quad.easeIn",
+    });
+    this.scene.tweens.add({
+      targets: [this.shadow, this.glow],
+      alpha: 0,
+      duration: 220,
       onComplete: () => this.destroy(),
     });
-  }
-
-  update(time: number): void {
-    if (this.isDead) return;
-    const body = this.body as Phaser.Physics.Arcade.Body;
-
-    // Lantern glow trails the body.
-    this.glow.setPosition(this.x + this.dir * 6, this.y + 4);
-
-    // While being knocked back, let physics carry the body.
-    if (time < this.knockbackUntil) return;
-
-    // Turn around at patrol bounds or when blocked by a wall.
-    if (this.x <= this.minX || body.blocked.left) this.dir = 1;
-    else if (this.x >= this.maxX || body.blocked.right) this.dir = -1;
-
-    body.setVelocityX(this.dir * COMBAT.enemyPatrolSpeed);
-    this.setFlipX(this.dir === -1);
   }
 }
