@@ -1,6 +1,7 @@
 import Phaser from "phaser";
-import { GAME, PALETTE } from "../config";
+import { COMBAT, GAME, PALETTE } from "../config";
 import { Player } from "../entities/Player";
+import { Enemy } from "../entities/Enemy";
 
 /**
  * First-scope playable scene: a dark forest clearing with a test floor and a
@@ -11,12 +12,17 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
+  private enemies!: Phaser.Physics.Arcade.Group;
+  private hitParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private hpPips!: Phaser.GameObjects.Graphics;
+  private playerDeadHandled = false;
 
   constructor() {
     super("GameScene");
   }
 
   create(): void {
+    this.playerDeadHandled = false;
     this.physics.world.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
     this.cameras.main.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
     this.cameras.main.setBackgroundColor(PALETTE.black);
@@ -36,8 +42,74 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setDeadzone(220, 140);
 
+    this.spawnEnemies();
+    this.setupCombat();
+
     this.buildAtmosphere();
     this.buildHud();
+  }
+
+  private spawnEnemies(): void {
+    this.enemies = this.physics.add.group({ runChildUpdate: false });
+    // Lost Pilgrims patrolling the forest floor.
+    const spawns: Array<[number, number]> = [
+      [700, GAME.floorY - 40],
+      [1150, GAME.floorY - 40],
+      [1500, GAME.floorY - 40],
+    ];
+    for (const [x, y] of spawns) {
+      const e = new Enemy(this, x, y);
+      this.enemies.add(e, true);
+    }
+    this.physics.add.collider(this.enemies, this.solids);
+  }
+
+  private setupCombat(): void {
+    // Reusable burst emitter for hit sparks (pale/gold echo motes).
+    this.hitParticles = this.add.particles(0, 0, "pixel", {
+      lifespan: 320,
+      speed: { min: 60, max: 200 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 3, end: 0 },
+      tint: [PALETTE.echoPale, PALETTE.echoGold],
+      gravityY: 500,
+      emitting: false,
+    });
+    this.hitParticles.setDepth(20);
+
+    // Spawn a slash arc VFX when the player swings.
+    this.player.onAttackStart = (facing) => this.spawnSlash(facing);
+
+    // Contact damage: touching a pilgrim hurts the player.
+    this.physics.add.overlap(this.player, this.enemies, (_p, eObj) => {
+      const e = eObj as Enemy;
+      if (e.isDead) return;
+      const hit = this.player.takeDamage(
+        COMBAT.enemyTouchDamage,
+        e.x,
+        this.time.now,
+      );
+      if (hit) {
+        this.cameras.main.shake(120, 0.008);
+        this.cameras.main.flash(90, 90, 0, 0);
+      }
+    });
+  }
+
+  private spawnSlash(facing: -1 | 1): void {
+    const slash = this.add
+      .image(this.player.x + facing * 22, this.player.y, "slash")
+      .setDepth(12)
+      .setFlipX(facing === -1)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(0.9);
+    this.tweens.add({
+      targets: slash,
+      alpha: { from: 0.95, to: 0 },
+      scaleX: { from: 0.6, to: 1.05 },
+      duration: 160,
+      onComplete: () => slash.destroy(),
+    });
   }
 
   /** Layered, parallax dark-forest backdrop using simple shapes + fog. */
@@ -190,13 +262,56 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(101);
     this.add
-      .text(16, 40, "A/D 또는 ←/→ 이동   ·   Space 점프   ·   Shift 대시", style)
+      .text(16, 40, "A/D 또는 ←/→ 이동  ·  Space 점프  ·  Shift 대시  ·  J 공격", style)
       .setScrollFactor(0)
       .setDepth(101)
       .setAlpha(0.85);
+
+    // Health pips.
+    this.hpPips = this.add.graphics().setScrollFactor(0).setDepth(101);
+    this.updateHud();
+  }
+
+  private updateHud(): void {
+    this.hpPips.clear();
+    for (let i = 0; i < this.player.maxHp; i++) {
+      const filled = i < this.player.hp;
+      this.hpPips.fillStyle(filled ? PALETTE.danger : 0x2a2f38, 1);
+      this.hpPips.fillRect(16 + i * 22, 70, 16, 16);
+      this.hpPips.lineStyle(2, PALETTE.black, 0.6);
+      this.hpPips.strokeRect(16 + i * 22, 70, 16, 16);
+    }
   }
 
   update(time: number): void {
     this.player.update(time);
+    this.enemies.getChildren().forEach((obj) => (obj as Enemy).update(time));
+
+    this.resolveSwordHits(time);
+    this.updateHud();
+
+    if (this.player.isDead && !this.playerDeadHandled) {
+      this.playerDeadHandled = true;
+      this.cameras.main.flash(300, 120, 0, 0);
+      this.time.delayedCall(1100, () => this.scene.restart());
+    }
+  }
+
+  /** Rectangle-vs-enemy check during the active swing window. */
+  private resolveSwordHits(time: number): void {
+    if (!this.player.isAttackActive(time)) return;
+    const rect = this.player.getAttackRect();
+    const swing = this.player.getSwingId();
+
+    this.enemies.getChildren().forEach((obj) => {
+      const e = obj as Enemy;
+      if (e.isDead || e.lastHitSwing === swing) return;
+      if (Phaser.Geom.Intersects.RectangleToRectangle(rect, e.getBounds())) {
+        e.lastHitSwing = swing;
+        e.takeDamage(COMBAT.attackDamage, this.player.x, time);
+        this.hitParticles.emitParticleAt(e.x, e.y, 12);
+        this.cameras.main.shake(70, 0.005);
+      }
+    });
   }
 }

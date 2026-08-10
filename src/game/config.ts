@@ -44,6 +44,29 @@ export const GAME = {
   floorY: 620,
 } as const;
 
+/** Combat tuning, kept separate from movement for clarity. */
+export const COMBAT = {
+  // Player attack (sword slash)
+  attackCooldownMs: 360,
+  attackWindupMs: 40,
+  attackActiveMs: 130,
+  attackReach: 30, // horizontal extent in front of the player
+  attackHalfHeight: 22,
+  attackDamage: 1,
+  attackKnockback: 300,
+  // Player health
+  playerMaxHp: 5,
+  playerInvulnMs: 850,
+  playerHurtKnockback: 320,
+  playerHurtLiftY: -220,
+  // Enemy (Lost Pilgrim)
+  enemyMaxHp: 3,
+  enemyPatrolSpeed: 55,
+  enemyTouchDamage: 1,
+  enemyHurtKnockback: 240,
+  enemyHitstopMs: 70,
+} as const;
+
 export function createGameConfig(parent: string): Phaser.Types.Core.GameConfig {
   return {
     type: Phaser.AUTO,
