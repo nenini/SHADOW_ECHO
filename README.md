@@ -89,8 +89,9 @@ npm run preview    # 빌드 결과 로컬 미리보기
 - Phaser + TypeScript + Vite, 카메라 추적, 다층 Parallax 배경
 - GitHub Pages 빌드/배포 설정 (`.github/workflows/deploy.yml`)
 
-플레이어·적·지형은 코드로 생성한 임시 플레이스홀더 텍스처입니다. 최종 제출 전에
-픽셀아트 에셋으로 교체하며, 외부 에셋은 [`docs/ASSET_LICENSES.md`](docs/ASSET_LICENSES.md)에 기록합니다.
+모든 아트/효과음은 **외부 에셋 없이 코드로 생성한 자체 픽셀아트/사운드**입니다
+(하린·잔영·순례자 도트, 숲 바닥/장식, 달·마른 나무·백색 성당 배경, Web Audio SFX).
+자세한 출처/라이선스는 [`docs/ASSET_LICENSES.md`](docs/ASSET_LICENSES.md) 참고.
 
 > 여기까지가 6시간 프로토타입의 스토리 Vertical Slice입니다:
 > 숲에서 깨어남 → 첫 전투 → 잔영 획득 → 레버 퍼즐 → 두 번째 전투 →

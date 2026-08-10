@@ -125,7 +125,7 @@ export class Player extends Phaser.GameObjects.Container {
     this.shadow = scene.add
       .ellipse(0, 0, SHADOW.width, SHADOW.height, 0x000000, SHADOW.alpha)
       .setOrigin(0.5, 0.5);
-    this.sprite = scene.add.sprite(0, 0, "harin").setOrigin(0.5, 0.5);
+    this.sprite = scene.add.sprite(0, 0, "harin").setOrigin(0.5, 1);
     // Shadow first (behind), sprite second (in front) within the container.
     this.add([this.shadow, this.sprite]);
 

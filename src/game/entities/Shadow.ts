@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { COMBAT, ECHO, JUMP, SHADOW, SUPPORT } from "../config";
+import { COMBAT, JUMP, SHADOW, SUPPORT } from "../config";
 import { actorDepth, clampWorldX, clampWorldY, perspectiveScale } from "../systems/space";
 import type { ActionFrame } from "../systems/ActionRecorder";
 import type { PlayStyle } from "../systems/PlayerProfile";
@@ -55,11 +55,9 @@ export class Shadow extends Phaser.GameObjects.Container {
       .ellipse(0, 0, SHADOW.width, SHADOW.height, 0x000000, SHADOW.alpha * 0.6)
       .setOrigin(0.5, 0.5);
     this.sprite = scene.add
-      .sprite(0, 0, "harin")
-      .setOrigin(0.5, 0.5)
-      .setTintFill(ECHO.shadowTint)
-      .setAlpha(ECHO.shadowAlpha)
-      .setBlendMode(Phaser.BlendModes.ADD);
+      .sprite(0, 0, "harin_echo")
+      .setOrigin(0.5, 1)
+      .setAlpha(0.82);
     this.add([this.shadow, this.sprite]);
 
     this.setVisible(false);
@@ -135,7 +133,7 @@ export class Shadow extends Phaser.GameObjects.Container {
 
     this.sprite.y = -f.jumpZ;
     this.sprite.setFlipX(f.facing === -1);
-    this.sprite.setTintFill(f.isDashing ? ECHO.dashTint : ECHO.shadowTint);
+    this.sprite.setAlpha(f.isDashing ? 1 : 0.82);
 
     const zt = Phaser.Math.Clamp(f.jumpZ / JUMP.maxShadowFadeZ, 0, 1);
     this.shadow.setScale(1 - 0.45 * zt);
@@ -184,7 +182,6 @@ export class Shadow extends Phaser.GameObjects.Container {
   private refreshTransform(): void {
     this.sprite.y = -this.jumpZ;
     this.sprite.setFlipX(this.facing === -1);
-    this.sprite.setTintFill(ECHO.shadowTint);
     const zt = Phaser.Math.Clamp(this.jumpZ / JUMP.maxShadowFadeZ, 0, 1);
     this.shadow.setScale(1 - 0.45 * zt);
     this.shadow.setAlpha(SHADOW.alpha * 0.6 * (1 - 0.55 * zt));

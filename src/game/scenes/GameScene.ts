@@ -12,6 +12,7 @@ import { SUPPORT } from "../config";
 import { Mara } from "../entities/Mara";
 import { Dialogue } from "../ui/Dialogue";
 import { sfx } from "../systems/Sfx";
+import { actorDepth, perspectiveScale } from "../systems/space";
 
 /** Anything that can land a 2.5D sword hit (Player or Shadow). */
 interface MeleeAttacker {
@@ -183,9 +184,50 @@ export class GameScene extends Phaser.Scene {
     this.add.circle(GAME.width * 0.72, 90, 46, PALETTE.moon, 0.9).setScrollFactor(0.1).setDepth(-49);
     this.add.circle(GAME.width * 0.72, 90, 70, PALETTE.moon, 0.08).setScrollFactor(0.1).setDepth(-49);
 
+    // The distant white cathedral (the goal), pale on the horizon.
+    this.paintCathedral(GAME.width * 1.15, 250);
+
     // Multi-layer parallax tree lines (far -> near).
     this.paintTreeLine(-30, worldWidth, h - 40, 0.3, PALETTE.black, 90, 26);
+    this.paintDeadTrees(worldWidth, h - 20, 0.42);
     this.paintTreeLine(-20, worldWidth, h + 10, 0.55, 0x080b12, 150, 40);
+  }
+
+  /** A pale, cold cathedral silhouette far in the background. */
+  private paintCathedral(x: number, baseY: number): void {
+    const g = this.add.graphics().setScrollFactor(0.15).setDepth(-48);
+    const body = 0x2a2f3a;
+    const pale = 0x3a4150;
+    // Main hall
+    g.fillStyle(body, 1);
+    g.fillRect(x, baseY - 90, 70, 90);
+    // Roof
+    g.fillTriangle(x - 6, baseY - 90, x + 35, baseY - 130, x + 76, baseY - 90);
+    // Central spire
+    g.fillRect(x + 30, baseY - 150, 10, 60);
+    g.fillTriangle(x + 28, baseY - 150, x + 35, baseY - 186, x + 42, baseY - 150);
+    // Faint moonlit edge + arched window glow
+    g.fillStyle(pale, 1);
+    g.fillRect(x, baseY - 90, 3, 90);
+    g.fillStyle(PALETTE.moon, 0.12);
+    g.fillRect(x + 30, baseY - 60, 10, 40);
+  }
+
+  /** A few bare, crooked trees between the parallax layers. */
+  private paintDeadTrees(spanX: number, baseY: number, scroll: number): void {
+    const g = this.add.graphics().setScrollFactor(scroll).setDepth(-36);
+    g.fillStyle(0x0a0d14, 1);
+    for (let x = 120; x < spanX; x += 520) {
+      const s = Math.abs(Math.sin(x * 0.017));
+      const th = 90 + s * 60;
+      g.fillRect(x, baseY - th, 5, th); // trunk
+      // a few crooked branches
+      g.fillRect(x - 14, baseY - th + 12, 16, 3);
+      g.fillRect(x - 16, baseY - th + 6, 4, 12);
+      g.fillRect(x + 5, baseY - th + 26, 16, 3);
+      g.fillRect(x + 18, baseY - th + 16, 4, 12);
+      g.fillRect(x - 8, baseY - th - 6, 4, 12);
+    }
   }
 
   private paintTreeLine(
@@ -225,6 +267,23 @@ export class GameScene extends Phaser.Scene {
     shade.fillRect(0, top, GAME.worldWidth, 26);
     shade.fillStyle(PALETTE.mutedGreen, 0.25);
     shade.fillRect(0, WORLD.yMin, GAME.worldWidth, 4);
+    // A faintly lighter walked path down the middle of the band.
+    shade.fillStyle(0x4a3f30, 0.18);
+    shade.fillRect(0, (WORLD.yMin + WORLD.yMax) / 2 - 12, GAME.worldWidth, 24);
+
+    // Scatter grass tufts and rocks (deterministic — no RNG), sorted by worldY.
+    for (let x = 90; x < GAME.worldWidth - 40; x += 96) {
+      const s = Math.abs(Math.sin(x * 0.11));
+      const s2 = Math.abs(Math.sin(x * 0.037 + 1.3));
+      const gy = WORLD.yMin + 12 + s * (WORLD.yMax - WORLD.yMin - 14);
+      const key = s2 > 0.72 ? "rock" : "grass";
+      this.add
+        .image(x, gy, key)
+        .setOrigin(0.5, 1)
+        .setDepth(actorDepth(gy) - 0.5)
+        .setScale(perspectiveScale(gy))
+        .setAlpha(0.9);
+    }
   }
 
   private spawnEnemies(): void {

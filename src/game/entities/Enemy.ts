@@ -53,7 +53,7 @@ export class Enemy extends Phaser.GameObjects.Container {
       .setOrigin(0.5, 0.5);
     // Faint danger glow from the lantern (offset to the carrying arm).
     this.glow = scene.add.ellipse(8, 2, 26, 20, 0xf0a060, 0.14).setOrigin(0.5, 0.5);
-    this.sprite = scene.add.sprite(0, 0, "pilgrim").setOrigin(0.5, 0.5);
+    this.sprite = scene.add.sprite(0, 0, "pilgrim").setOrigin(0.5, 1);
     this.add([this.shadow, this.glow, this.sprite]);
 
     this.wanderMin = clampWorldX(worldX - wanderRadius);
