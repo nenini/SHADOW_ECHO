@@ -60,6 +60,12 @@ npm run preview    # 빌드 결과 로컬 미리보기
 - 플레이어 HP·i-frame·2D 넉백, 적 HP·넉백·사망
 - 히트 파티클/슬래시 VFX/화면 흔들림, HP UI
 
+**잔영 (Echo)**
+- 최근 ~3초 행동을 프레임 단위로 기록(worldX/worldY/jumpZ/facing/dash/attack)
+- `Q` 입력 시 Shadow(잔영)가 기록된 위치·높이·공격을 시간순으로 재현
+- 재현 중에도 플레이어는 자유롭게 이동; Shadow의 공격도 적에게 적중(협공)
+- 창백한 금빛 잔영 톤, 재현 종료 시 사라짐
+
 **기반**
 - Phaser + TypeScript + Vite, 카메라 추적, 다층 Parallax 배경
 - GitHub Pages 빌드/배포 설정 (`.github/workflows/deploy.yml`)
@@ -69,7 +75,6 @@ npm run preview    # 빌드 결과 로컬 미리보기
 
 ## 이후 구현 예정
 
-- 잔영(Echo) 기록·재생 시스템 (Q) — `Player.getState()`가 worldX/Y/jumpZ/action을 노출
 - 레버 퍼즐
 - 두 번째 전투 + Adaptive Shadow (AGGRESSIVE / CAUTIOUS 분류에 따른 선제 지원 행동)
 - 스토리 시퀀스 및 "이렇게 할 거였잖아." → 마을 → TO BE CONTINUED

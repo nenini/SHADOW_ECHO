@@ -23,8 +23,8 @@ export class Enemy extends Phaser.GameObjects.Container {
   public readonly maxHp: number;
   public isDead = false;
   public jumpZ = 0; // pilgrims stay grounded; kept for a uniform actor interface
-  /** The player's swing id that last hit this enemy (per-swing dedupe). */
-  public lastHitSwing = -1;
+  /** Last swing id that hit this enemy, keyed by attacker ("player" | "shadow"). */
+  public lastHitSwing: Record<string, number> = {};
 
   private facing: -1 | 1 = 1;
   private wanderDir: -1 | 1 = 1;

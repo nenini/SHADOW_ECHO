@@ -1,7 +1,18 @@
 import Phaser from "phaser";
-import { COMBAT, DEPTH, GAME, PALETTE, WORLD } from "../config";
+import { COMBAT, DEPTH, ECHO, GAME, PALETTE, WORLD } from "../config";
 import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
+import { Shadow } from "../entities/Shadow";
+import { ActionRecorder } from "../systems/ActionRecorder";
+
+/** Anything that can land a 2.5D sword hit (Player or Shadow). */
+interface MeleeAttacker {
+  worldX: number;
+  worldY: number;
+  isAttackActive(time: number): boolean;
+  getSwingId(): number;
+  getAttackXRange(): { min: number; max: number };
+}
 
 /**
  * Pseudo-2.5D belt-scroll arena. Actors live on a floor plane (worldX, worldY)
@@ -12,6 +23,9 @@ import { Enemy } from "../entities/Enemy";
 export class GameScene extends Phaser.Scene {
   private player!: Player;
   private enemies: Enemy[] = [];
+  private shadow!: Shadow;
+  private recorder!: ActionRecorder;
+  private keyEcho!: Phaser.Input.Keyboard.Key;
   private hitParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
   private hpPips!: Phaser.GameObjects.Graphics;
   private playerDeadHandled = false;
@@ -34,6 +48,7 @@ export class GameScene extends Phaser.Scene {
 
     this.spawnEnemies();
     this.setupCombat();
+    this.setupEcho();
 
     // Camera follows the logical floor position, so jumping never bounces it.
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
@@ -127,19 +142,30 @@ export class GameScene extends Phaser.Scene {
     });
     this.hitParticles.setDepth(DEPTH.vfx);
 
-    this.player.onAttackStart = (facing) => this.spawnSlash(facing);
+    this.player.onAttackStart = (facing) =>
+      this.spawnSlash(facing, this.player.worldX, this.player.worldY - this.player.jumpZ - 6, false);
   }
 
-  private spawnSlash(facing: -1 | 1): void {
+  /** 잔영 recording + Shadow replay (triggered by Q). */
+  private setupEcho(): void {
+    this.recorder = new ActionRecorder(ECHO.maxFrames);
+    this.shadow = new Shadow(this);
+    this.shadow.onAttackStart = (facing, x, y, jumpZ) =>
+      this.spawnSlash(facing, x, y - jumpZ - 6, true);
+    this.keyEcho = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+  }
+
+  private spawnSlash(facing: -1 | 1, x: number, y: number, echo: boolean): void {
     const slash = this.add
-      .image(this.player.worldX + facing * 22, this.player.worldY - this.player.jumpZ - 6, "slash")
+      .image(x + facing * 22, y, "slash")
       .setDepth(DEPTH.vfx)
       .setFlipX(facing === -1)
       .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(echo ? PALETTE.echoGold : 0xffffff)
       .setScale(0.9);
     this.tweens.add({
       targets: slash,
-      alpha: { from: 0.95, to: 0 },
+      alpha: { from: echo ? 0.8 : 0.95, to: 0 },
       scaleX: { from: 0.6, to: 1.05 },
       duration: 160,
       onComplete: () => slash.destroy(),
@@ -177,7 +203,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(DEPTH.hud);
     this.add
-      .text(16, 40, "A/D·←/→ 좌우  ·  W/S·↑/↓ 앞뒤  ·  Space 점프  ·  Shift 대시  ·  J 공격", style)
+      .text(16, 40, "A/D·←/→ 좌우  ·  W/S·↑/↓ 앞뒤  ·  Space 점프  ·  Shift 대시  ·  J 공격  ·  Q 잔영", style)
       .setScrollFactor(0)
       .setDepth(DEPTH.hud)
       .setAlpha(0.85);
@@ -202,11 +228,37 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.player.update(time, delta);
 
+    // Record this frame of player action for the Shadow.
+    const s = this.player.getState();
+    this.recorder.record({
+      worldX: s.worldX,
+      worldY: s.worldY,
+      jumpZ: s.jumpZ,
+      facing: s.facing,
+      isDashing: s.isDashing,
+      attackActive: s.attackActive,
+      swingId: s.swingId,
+    });
+
+    // Q replays the last ~3s as an Echo Shadow (ignored while one is playing).
+    if (
+      Phaser.Input.Keyboard.JustDown(this.keyEcho) &&
+      !this.shadow.isReplaying &&
+      !this.player.isDead &&
+      this.recorder.length > 0
+    ) {
+      this.shadow.startReplay(this.recorder.snapshot());
+    }
+    this.shadow.update(time, delta);
+
     // Drop destroyed enemies, then update the survivors.
     this.enemies = this.enemies.filter((e) => e.active);
     for (const e of this.enemies) e.update(time, delta, this.player);
 
-    this.resolveSwordHits(time);
+    // Both the player and the replaying Shadow can land sword hits.
+    this.applyAttack(this.player, "player", time);
+    if (this.shadow.isReplaying) this.applyAttack(this.shadow, "shadow", time);
+
     this.updateHud();
 
     if (this.player.isDead && !this.playerDeadHandled) {
@@ -217,24 +269,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Sword hit test in 2.5D: the target must be within the forward X reach AND
-   * within a shallow worldY depth band AND not too high in the air.
+   * Sword hit test in 2.5D: the target must be within the attacker's forward X
+   * reach AND within a shallow worldY depth band AND not too high in the air.
+   * `key` namespaces per-swing dedupe so player and shadow hits don't clash.
    */
-  private resolveSwordHits(time: number): void {
-    if (!this.player.isAttackActive(time)) return;
-    const xr = this.player.getAttackXRange();
-    const swing = this.player.getSwingId();
+  private applyAttack(attacker: MeleeAttacker, key: string, time: number): void {
+    if (!attacker.isAttackActive(time)) return;
+    const xr = attacker.getAttackXRange();
+    const swing = attacker.getSwingId();
     const enemyHalfWidth = 12;
 
     for (const e of this.enemies) {
-      if (e.isDead || e.lastHitSwing === swing) continue;
-      if (Math.abs(this.player.worldY - e.worldY) > COMBAT.attackDepthTolerance) continue;
+      if (e.isDead || e.lastHitSwing[key] === swing) continue;
+      if (Math.abs(attacker.worldY - e.worldY) > COMBAT.attackDepthTolerance) continue;
       if (e.jumpZ > COMBAT.attackMaxTargetZ) continue;
       const overlapsX = e.worldX + enemyHalfWidth >= xr.min && e.worldX - enemyHalfWidth <= xr.max;
       if (!overlapsX) continue;
 
-      e.lastHitSwing = swing;
-      e.takeDamage(COMBAT.attackDamage, this.player.worldX, this.player.worldY, time);
+      e.lastHitSwing[key] = swing;
+      e.takeDamage(COMBAT.attackDamage, attacker.worldX, attacker.worldY, time);
       this.hitParticles.emitParticleAt(e.worldX, e.worldY - e.jumpZ - 8, 12);
       this.cameras.main.shake(70, 0.005);
     }

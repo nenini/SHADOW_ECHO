@@ -120,6 +120,15 @@ export const COMBAT = {
   knockbackDecayPerSec: 8,
 } as const;
 
+/** 잔영(Echo): rolling action recording + Shadow replay. */
+export const ECHO = {
+  recordMs: 3000, // how much recent history the Shadow can replay
+  maxFrames: 220, // ring-buffer size (~3.6s at 60fps, safely above recordMs)
+  shadowAlpha: 0.55,
+  shadowTint: PALETTE.echoGold, // pale gold afterimage
+  dashTint: PALETTE.echoPale,
+} as const;
+
 export function createGameConfig(parent: string): Phaser.Types.Core.GameConfig {
   return {
     type: Phaser.AUTO,

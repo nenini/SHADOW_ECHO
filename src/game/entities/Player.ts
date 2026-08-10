@@ -34,6 +34,8 @@ export interface PlayerState {
   isJumping: boolean;
   isDashing: boolean;
   isAttacking: boolean;
+  /** True only during the damaging window of a swing (for Shadow replay). */
+  attackActive: boolean;
   swingId: number;
 }
 
@@ -98,6 +100,7 @@ export class Player extends Phaser.GameObjects.Container {
 
   private moveX = 0;
   private moveY = 0;
+  private attackActiveNow = false;
 
   public inputState: PlayerInputState = {
     moveX: 0,
@@ -254,6 +257,7 @@ export class Player extends Phaser.GameObjects.Container {
       this.onAttackStart?.(this.facing);
     }
     if (this.isAttacking && time >= this.attackEndsAt) this.isAttacking = false;
+    this.attackActiveNow = this.isAttackActive(time);
 
     this.applyVisuals(time);
 
@@ -359,6 +363,7 @@ export class Player extends Phaser.GameObjects.Container {
       isJumping: !this.isGrounded,
       isDashing: this.isDashing,
       isAttacking: this.isAttacking,
+      attackActive: this.attackActiveNow,
       swingId: this.swingId,
     };
   }
