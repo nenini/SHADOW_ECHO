@@ -80,6 +80,11 @@ npm run preview    # 빌드 결과 로컬 미리보기
   - CAUTIOUS → 적의 **시선을 끌어** 공격 기회 생성
 - 이후 그림자 대사: "이렇게 할 거였잖아." (고정 연출이 아니라 실제 로그로 분기)
 
+**스토리 (Vertical Slice 엔딩)**
+- 마을 입구 도달 시 컷신 진입(게임플레이 정지) + 마라 NPC 대사
+- "네 그림자는 아니란다." 포함 대사(Space/E/J로 진행)
+- 암전 → "잔영 보존 실험 37차 — 대상 HARIN" → "TO BE CONTINUED" (R로 다시 시작)
+
 **기반**
 - Phaser + TypeScript + Vite, 카메라 추적, 다층 Parallax 배경
 - GitHub Pages 빌드/배포 설정 (`.github/workflows/deploy.yml`)
@@ -87,10 +92,14 @@ npm run preview    # 빌드 결과 로컬 미리보기
 플레이어·적·지형은 코드로 생성한 임시 플레이스홀더 텍스처입니다. 최종 제출 전에
 픽셀아트 에셋으로 교체하며, 외부 에셋은 [`docs/ASSET_LICENSES.md`](docs/ASSET_LICENSES.md)에 기록합니다.
 
+> 여기까지가 6시간 프로토타입의 스토리 Vertical Slice입니다:
+> 숲에서 깨어남 → 첫 전투 → 잔영 획득 → 레버 퍼즐 → 두 번째 전투 →
+> 그림자의 선제 행동("이렇게 할 거였잖아.") → 마을 입구(마라) → 암전 →
+> "잔영 보존 실험 37차 — 대상 HARIN" → TO BE CONTINUED
+
 ## 이후 구현 예정
 
-- 스토리 시퀀스: 마을 입구 → 마라("네 그림자는 아니란다.") → 암전 → "잔영 보존 실험 37차 — 대상 HARIN" → TO BE CONTINUED
-- 사운드 / 최종 픽셀아트 에셋 교체 / GitHub Pages 온라인 배포
+- 사운드 / 최종 픽셀아트 에셋 교체(임시 도형 제거) / GitHub Pages 온라인 배포
 
 전체 방향은 [`docs/STORY.md`](docs/STORY.md), 범위는 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) 참고.
 
@@ -102,9 +111,9 @@ src/
   game/
     config.ts          # 게임 설정 · 팔레트 · 좌표/물리/전투 상수
     scenes/            # BootScene, GameScene
-    entities/          # Player, Enemy, Shadow, Lever, Door (Container 기반 2.5D)
+    entities/          # Player, Enemy, Shadow, Lever, Door, Mara
     systems/           # space, ActionRecorder, InteractionSystem, PlayerProfile
-    ui/                # (예정) HUD, 대사창
+    ui/                # Dialogue
   styles/
 public/assets/         # characters / enemies / environment / ui / audio / effects
 docs/                  # STORY, PROJECT_PLAN, AI_USAGE_LOG, ASSET_LICENSES 등

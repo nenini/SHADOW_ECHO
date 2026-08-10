@@ -18,6 +18,7 @@ export class BootScene extends Phaser.Scene {
     this.makePixelTexture();
     this.makePilgrimTexture();
     this.makeSlashTexture();
+    this.makeMaraTexture();
     this.scene.start("GameScene");
   }
 
@@ -103,6 +104,30 @@ export class BootScene extends Phaser.Scene {
     g.fillRect(w - 6, 26, 3, 3);
 
     g.generateTexture("pilgrim", w, h);
+    g.destroy();
+  }
+
+  /** Mara: a small, stooped old woman in a gray cloak. */
+  private makeMaraTexture(): void {
+    const w = 20;
+    const h = 30;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // Cloak
+    g.fillStyle(PALETTE.grayBrown, 1);
+    g.fillRect(3, 10, w - 6, h - 10);
+    // Hunched hood
+    g.fillStyle(PALETTE.deepNavy, 1);
+    g.fillRect(2, 7, w - 4, 8);
+    // Bowed head
+    g.fillStyle(PALETTE.fog, 1);
+    g.fillRect(6, 4, 8, 7);
+    // Face shadow
+    g.fillStyle(PALETTE.black, 1);
+    g.fillRect(7, 7, 6, 3);
+    // Cane
+    g.fillStyle(0x2a2420, 1);
+    g.fillRect(w - 3, 6, 2, h - 6);
+    g.generateTexture("mara", w, h);
     g.destroy();
   }
 

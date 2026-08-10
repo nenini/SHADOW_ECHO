@@ -78,6 +78,9 @@ export const DEPTH = {
   vfx: 5000,
   vignette: 9000,
   hud: 10000,
+  dialogue: 15000,
+  overlay: 20000, // fade-to-black
+  endCard: 21000, // ending text on top of the fade
 } as const;
 
 /** Ground shadow footprint. */

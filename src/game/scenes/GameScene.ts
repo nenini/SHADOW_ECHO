@@ -9,6 +9,8 @@ import { ActionRecorder } from "../systems/ActionRecorder";
 import { InteractionSystem } from "../systems/InteractionSystem";
 import { PlayerProfile, type PlayStyle } from "../systems/PlayerProfile";
 import { SUPPORT } from "../config";
+import { Mara } from "../entities/Mara";
+import { Dialogue } from "../ui/Dialogue";
 
 /** Anything that can land a 2.5D sword hit (Player or Shadow). */
 interface MeleeAttacker {
@@ -50,6 +52,16 @@ export class GameScene extends Phaser.Scene {
   private supportTriggered = false;
   private lastPlayerHp = 0;
   private subtitle!: Phaser.GameObjects.Text;
+
+  // --- Closing story sequence ---
+  private dialogue!: Dialogue;
+  private storyActive = false;
+  private storyStarted = false;
+  private fadeOverlay!: Phaser.GameObjects.Rectangle;
+  private endCard!: Phaser.GameObjects.Text;
+  private restartHint!: Phaser.GameObjects.Text;
+  private keyRestart!: Phaser.Input.Keyboard.Key;
+  private readonly villageTriggerX = 2900;
   private readonly puzzle = {
     leverX: 1300,
     leverY: 520,
@@ -70,6 +82,8 @@ export class GameScene extends Phaser.Scene {
     this.echoHintAt = -1;
     this.puzzleComplete = false;
     this.supportTriggered = false;
+    this.storyActive = false;
+    this.storyStarted = false;
     this.profile = new PlayerProfile();
 
     this.cameras.main.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
@@ -92,8 +106,64 @@ export class GameScene extends Phaser.Scene {
     this.shadow.onSupportAct = (style, target) => this.applyShadowSupport(style, target);
 
     this.buildAtmosphere();
+    this.buildVillage();
     this.buildHud();
+    this.buildStoryUi();
     this.lastPlayerHp = this.player.hp;
+  }
+
+  /** Village entrance backdrop + Mara at the far end of the arena. */
+  private buildVillage(): void {
+    // A few house silhouettes behind the village entrance.
+    const g = this.add.graphics().setDepth(-38).setScrollFactor(0.6);
+    g.fillStyle(0x0a0e16, 1);
+    const houses: Array<[number, number, number, number]> = [
+      [2760, 300, 120, 150],
+      [2900, 330, 90, 120],
+      [3010, 290, 130, 160],
+    ];
+    for (const [x, y, w, hh] of houses) {
+      g.fillRect(x, y, w, hh);
+      g.fillTriangle(x - 6, y, x + w / 2, y - 34, x + w + 6, y);
+    }
+    new Mara(this, 3010, 545);
+  }
+
+  private buildStoryUi(): void {
+    this.dialogue = new Dialogue(this, DEPTH.dialogue);
+
+    this.fadeOverlay = this.add
+      .rectangle(0, 0, GAME.width, GAME.height, PALETTE.black, 1)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(DEPTH.overlay)
+      .setAlpha(0)
+      .setVisible(false);
+
+    this.endCard = this.add
+      .text(GAME.width / 2, GAME.height / 2, "", {
+        fontFamily: "monospace",
+        fontSize: "22px",
+        color: "#f2efe4",
+        align: "center",
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(DEPTH.endCard)
+      .setVisible(false);
+
+    this.restartHint = this.add
+      .text(GAME.width / 2, GAME.height - 40, "R  다시 시작", {
+        fontFamily: "monospace",
+        fontSize: "14px",
+        color: "#8a95a5",
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(DEPTH.endCard)
+      .setVisible(false);
+
+    this.keyRestart = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
   }
 
   // --- World construction ---
@@ -348,6 +418,18 @@ export class GameScene extends Phaser.Scene {
   // --- Per-frame update ---
 
   update(time: number, delta: number): void {
+    // Closing story: trigger at the village, then freeze gameplay for the beat.
+    if (!this.storyStarted && this.player.worldX > this.villageTriggerX) {
+      this.startStory();
+    }
+    if (this.storyActive) {
+      this.dialogue.update();
+      if (this.restartHint.visible && Phaser.Input.Keyboard.JustDown(this.keyRestart)) {
+        this.scene.restart();
+      }
+      return;
+    }
+
     this.player.update(time, delta);
 
     // Record this frame of player action for the Shadow.
@@ -488,6 +570,40 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(2200, () => s.setText("하린:  너…"));
     this.time.delayedCall(3400, () => s.setText("그림자:  틀렸어?"));
     this.time.delayedCall(5200, () => s.setVisible(false));
+  }
+
+  /** Begin the closing story beat at the village entrance. */
+  private startStory(): void {
+    this.storyStarted = true;
+    this.storyActive = true;
+    this.subtitle.setVisible(false);
+    this.dialogue.start(
+      [
+        { speaker: "마라", text: "...그 아이가 아직 널 따라다니는구나." },
+        { speaker: "하린", text: "이걸 알아요?" },
+        { speaker: "마라", text: "네 그림자는 아니란다." },
+        { speaker: "하린", text: "그럼... 누구죠?" },
+        { speaker: "마라", text: "성당에 가지 마. 그곳에 가면 네가 원하는 답은 없을 거야." },
+      ],
+      () => this.beginEnding(),
+    );
+  }
+
+  /** Fade to black, then the ending cards. */
+  private beginEnding(): void {
+    this.fadeOverlay.setVisible(true);
+    this.tweens.add({
+      targets: this.fadeOverlay,
+      alpha: { from: 0, to: 1 },
+      duration: 1500,
+      onComplete: () => {
+        this.endCard.setVisible(true).setText("잔영 보존 실험 37차\n— 대상 HARIN");
+        this.time.delayedCall(2800, () => {
+          this.endCard.setText("TO BE CONTINUED");
+          this.restartHint.setVisible(true);
+        });
+      },
+    });
   }
 
   /** Lever prompt, echo hint state machine, and puzzle completion. */
