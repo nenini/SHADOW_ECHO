@@ -30,6 +30,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private dashEndsAt = 0;
   private dashReadyAt = 0;
 
+  // Timestamps for forgiving jump handling (coyote time + input buffering).
+  private lastOnGroundAt = -10000;
+  private jumpBufferedAt = -10000;
+
   /** The intent produced this frame — read by systems after update(). */
   public inputState: PlayerInputState = {
     moveDir: 0,
@@ -106,11 +110,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       body.setVelocityX(moveDir * GAME.moveSpeed);
     }
 
-    // --- Jump ---
+    // --- Jump (coyote time + input buffer + variable height) ---
+    if (this.onGround) this.lastOnGroundAt = time;
+    if (Phaser.Input.Keyboard.JustDown(this.keys.jump)) this.jumpBufferedAt = time;
+
     let jumpStarted = false;
-    if (Phaser.Input.Keyboard.JustDown(this.keys.jump) && this.onGround && !this.isDashing) {
+    const withinCoyote = time - this.lastOnGroundAt <= GAME.coyoteMs;
+    const jumpBuffered = time - this.jumpBufferedAt <= GAME.jumpBufferMs;
+    if (jumpBuffered && withinCoyote && !this.isDashing) {
       body.setVelocityY(GAME.jumpVelocity);
       jumpStarted = true;
+      this.jumpBufferedAt = -10000;
+      this.lastOnGroundAt = -10000;
+    }
+
+    // Release jump early while rising -> shorter hop.
+    if (Phaser.Input.Keyboard.JustUp(this.keys.jump) && body.velocity.y < 0) {
+      body.setVelocityY(body.velocity.y * GAME.jumpCutMultiplier);
     }
 
     // Face the movement direction visually.

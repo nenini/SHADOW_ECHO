@@ -10,6 +10,7 @@ import { Player } from "../entities/Player";
 export class GameScene extends Phaser.Scene {
   private player!: Player;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
+  private platforms!: Phaser.Physics.Arcade.StaticGroup;
 
   constructor() {
     super("GameScene");
@@ -25,6 +26,12 @@ export class GameScene extends Phaser.Scene {
 
     this.player = new Player(this, 160, GAME.floorY - 60);
     this.physics.add.collider(this.player, this.solids);
+    this.physics.add.collider(
+      this.player,
+      this.platforms,
+      undefined,
+      this.landOnPlatform as unknown as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+    );
 
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setDeadzone(220, 140);
@@ -100,19 +107,22 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Floating platforms (x, y, widthInTiles).
+    // Floating platforms (leftEdgeX, centerY, widthInTiles).
+    // Laid out as a climbable staircase: each step is ~50-100px above the
+    // previous surface (jump apex ~155px), with gaps small enough to clear
+    // on a running jump or dash. First step top is ~106px above the floor.
     const platforms: Array<[number, number, number]> = [
-      [520, 500, 4],
-      [760, 420, 3],
-      [1040, 470, 4],
-      [1360, 380, 3],
-      [1680, 460, 5],
-      [2100, 400, 4],
-      [2500, 480, 4],
+      [420, 540, 8],
+      [760, 460, 7],
+      [1120, 380, 6],
+      [1460, 470, 7],
+      [1820, 400, 6],
+      [2200, 470, 8],
     ];
+    this.platforms = this.physics.add.staticGroup();
     for (const [px, py, wTiles] of platforms) {
       for (let i = 0; i < wTiles; i++) {
-        const img = this.solids.create(
+        const img = this.platforms.create(
           px + i * tile,
           py,
           "ground",
@@ -122,6 +132,23 @@ export class GameScene extends Phaser.Scene {
       }
     }
   }
+
+  /**
+   * One-way collision: the player passes up through a platform from below and
+   * lands on its top. Only resolves when the player is descending and was above
+   * the platform surface on the previous frame.
+   */
+  private landOnPlatform = (
+    playerObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+    platformObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Tilemaps.Tile,
+  ): boolean => {
+    const pb = (playerObj as Phaser.Types.Physics.Arcade.GameObjectWithBody)
+      .body as Phaser.Physics.Arcade.Body;
+    const tb = (platformObj as Phaser.Types.Physics.Arcade.GameObjectWithBody)
+      .body as Phaser.Physics.Arcade.Body;
+    const prevBottom = pb.prev.y + pb.height;
+    return pb.velocity.y >= 0 && prevBottom <= tb.top + 2;
+  };
 
   /** Fog overlay + subtle vignette for mood. */
   private buildAtmosphere(): void {

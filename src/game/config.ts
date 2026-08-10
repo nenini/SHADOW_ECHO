@@ -26,8 +26,15 @@ export const GAME = {
   height: 540,
   gravityY: 1400,
   // Player movement
-  moveSpeed: 260,
-  jumpVelocity: -560,
+  moveSpeed: 280,
+  // Jump: apex height = jumpVelocity^2 / (2*gravityY).
+  // 660^2 / 2800 ~= 155px, comfortably above the ~100px platform steps.
+  jumpVelocity: -660,
+  // Releasing jump early cuts upward velocity for a variable-height jump.
+  jumpCutMultiplier: 0.45,
+  // Grace windows that make platforming forgiving (in ms).
+  coyoteMs: 100,
+  jumpBufferMs: 120,
   dashSpeed: 640,
   dashDurationMs: 160,
   dashCooldownMs: 520,
