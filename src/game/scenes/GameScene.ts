@@ -7,6 +7,8 @@ import { Lever } from "../entities/Lever";
 import { Door } from "../entities/Door";
 import { ActionRecorder } from "../systems/ActionRecorder";
 import { InteractionSystem } from "../systems/InteractionSystem";
+import { PlayerProfile, type PlayStyle } from "../systems/PlayerProfile";
+import { SUPPORT } from "../config";
 
 /** Anything that can land a 2.5D sword hit (Player or Shadow). */
 interface MeleeAttacker {
@@ -41,6 +43,13 @@ export class GameScene extends Phaser.Scene {
   private echoHint!: Phaser.GameObjects.Text;
   private echoHintAt = -1;
   private puzzleComplete = false;
+
+  // --- Second combat + Adaptive Shadow ---
+  private profile!: PlayerProfile;
+  private secondEnemies: Enemy[] = [];
+  private supportTriggered = false;
+  private lastPlayerHp = 0;
+  private subtitle!: Phaser.GameObjects.Text;
   private readonly puzzle = {
     leverX: 1300,
     leverY: 520,
@@ -57,8 +66,11 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.playerDeadHandled = false;
     this.enemies = [];
+    this.secondEnemies = [];
     this.echoHintAt = -1;
     this.puzzleComplete = false;
+    this.supportTriggered = false;
+    this.profile = new PlayerProfile();
 
     this.cameras.main.setBounds(0, 0, GAME.worldWidth, GAME.worldHeight);
     this.cameras.main.setBackgroundColor(PALETTE.black);
@@ -77,8 +89,11 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setDeadzone(180, 240);
 
+    this.shadow.onSupportAct = (style, target) => this.applyShadowSupport(style, target);
+
     this.buildAtmosphere();
     this.buildHud();
+    this.lastPlayerHp = this.player.hp;
   }
 
   // --- World construction ---
@@ -142,15 +157,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnEnemies(): void {
-    // Kept clear of the puzzle zone (~1300-1760) so the lever/door read cleanly.
-    const spawns: Array<[number, number]> = [
+    // First combat (before the puzzle).
+    const first: Array<[number, number]> = [
       [700, 470],
       [1000, 560],
-      [2250, 500],
-      [2600, 470],
     ];
-    for (const [x, y] of spawns) {
-      this.enemies.push(new Enemy(this, x, y));
+    // Second combat (past the gate ~1760). The Adaptive Shadow assists here.
+    const second: Array<[number, number]> = [
+      [2150, 480],
+      [2350, 560],
+      [2550, 500],
+    ];
+    for (const [x, y] of first) this.enemies.push(new Enemy(this, x, y));
+    for (const [x, y] of second) {
+      const e = new Enemy(this, x, y);
+      this.enemies.push(e);
+      this.secondEnemies.push(e);
     }
   }
 
@@ -297,6 +319,19 @@ export class GameScene extends Phaser.Scene {
 
     this.hpPips = this.add.graphics().setScrollFactor(0).setDepth(DEPTH.hud);
     this.updateHud();
+
+    // Subtitle for the Shadow's line (dark fairy-tale tone, no dialogue box).
+    this.subtitle = this.add
+      .text(GAME.width / 2, GAME.height - 130, "", {
+        fontFamily: "monospace",
+        fontSize: "20px",
+        color: "#f2efe4",
+        align: "center",
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(DEPTH.hud)
+      .setVisible(false);
   }
 
   private updateHud(): void {
@@ -331,6 +366,23 @@ export class GameScene extends Phaser.Scene {
     // Player interact goes through the same path the Shadow will replay.
     if (s.interact) this.onActorInteract(this.player.worldX, this.player.worldY, false);
 
+    // --- PlayerProfile metrics (real play log) ---
+    const inp = this.player.inputState;
+    if (inp.attack) this.profile.attackCount++;
+    if (inp.dash) this.profile.dashCount++;
+    if (inp.jump) this.profile.jumpCount++;
+    if (this.player.hp < this.lastPlayerHp) {
+      this.profile.damageTaken += this.lastPlayerHp - this.player.hp;
+    }
+    this.lastPlayerHp = this.player.hp;
+    let nearest = Infinity;
+    for (const e of this.enemies) {
+      if (e.isDead) continue;
+      const d = Math.hypot(e.worldX - this.player.worldX, e.worldY - this.player.worldY);
+      if (d < nearest) nearest = d;
+    }
+    if (nearest < Infinity) this.profile.sampleEnemyDistance(nearest);
+
     // Q replays the last ~3s as an Echo Shadow (ignored while one is playing).
     if (
       Phaser.Input.Keyboard.JustDown(this.keyEcho) &&
@@ -339,6 +391,7 @@ export class GameScene extends Phaser.Scene {
       this.recorder.length > 0
     ) {
       this.shadow.startReplay(this.recorder.snapshot());
+      this.profile.echoUseCount++;
     }
     this.shadow.update(time, delta);
 
@@ -349,6 +402,9 @@ export class GameScene extends Phaser.Scene {
     // Both the player and the replaying Shadow can land sword hits.
     this.applyAttack(this.player, "player", time);
     if (this.shadow.isReplaying) this.applyAttack(this.shadow, "shadow", time);
+
+    // Adaptive Shadow: independent support at the end of the second combat.
+    this.updateAdaptiveShadow(time);
 
     // Door lifecycle + player blocking + puzzle completion + hints.
     this.door.update(time);
@@ -387,6 +443,51 @@ export class GameScene extends Phaser.Scene {
       this.hitParticles.emitParticleAt(e.worldX, e.worldY - e.jumpZ - 8, 12);
       this.cameras.main.shake(70, 0.005);
     }
+  }
+
+  /**
+   * When the second combat is down to its last enemy, the Shadow performs ONE
+   * independent support action chosen by the PlayerProfile classification.
+   */
+  private updateAdaptiveShadow(_time: number): void {
+    if (this.supportTriggered || !this.puzzleComplete) return;
+    if (this.shadow.isReplaying) return; // don't interrupt a replay
+    const alive = this.secondEnemies.filter((e) => e.active && !e.isDead);
+    if (alive.length !== 1) return;
+
+    const target = alive[0];
+    const style = this.profile.classify();
+    this.supportTriggered = true;
+    const fromX = this.player.worldX - this.player.facingDir * 36;
+    this.shadow.startSupport(style, target, fromX, this.player.worldY);
+  }
+
+  /** Apply the Shadow's chosen support effect + speak its line. */
+  private applyShadowSupport(style: PlayStyle, target: Enemy | null): void {
+    const now = this.time.now;
+    if (style === "AGGRESSIVE") {
+      // Stun the enemy: create an entry opening for the player.
+      if (target) {
+        target.stagger(now, SUPPORT.staggerMs);
+        this.spawnSlash(1, target.worldX, target.worldY - 8, true);
+        this.hitParticles.emitParticleAt(target.worldX, target.worldY - 8, 14);
+      }
+      this.cameras.main.shake(120, 0.006);
+    } else {
+      // Draw the enemy's attention: create an attack chance for the player.
+      if (target) target.distractTo(this.shadow.worldX, this.shadow.worldY, now, SUPPORT.tauntMs);
+      this.spawnPulse(this.shadow.worldX, this.shadow.worldY);
+    }
+    this.showShadowLine();
+  }
+
+  /** The Shadow's first words, as staged subtitles (this beat only). */
+  private showShadowLine(): void {
+    const s = this.subtitle;
+    s.setVisible(true).setText("그림자:  이렇게 할 거였잖아.");
+    this.time.delayedCall(2200, () => s.setText("하린:  너…"));
+    this.time.delayedCall(3400, () => s.setText("그림자:  틀렸어?"));
+    this.time.delayedCall(5200, () => s.setVisible(false));
   }
 
   /** Lever prompt, echo hint state machine, and puzzle completion. */

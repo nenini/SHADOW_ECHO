@@ -35,6 +35,12 @@ export class Enemy extends Phaser.GameObjects.Container {
   private attackStrikeAt = -1;
   private hurtUntil = 0;
 
+  // Shadow support effects.
+  private staggerUntil = 0;
+  private distractUntil = 0;
+  private distractX = 0;
+  private distractY = 0;
+
   private kbVX = 0;
   private kbVY = 0;
 
@@ -70,13 +76,54 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.applyKnockback(dt);
     if (this.isDead) return;
 
+    // Stagger (AGGRESSIVE support): frozen and unable to act.
+    if (time < this.staggerUntil) {
+      this.sprite.setTintFill(0x9a7bd0);
+      this.applyVisuals();
+      return;
+    }
+    if (this.staggerUntil !== 0) {
+      this.staggerUntil = 0;
+      this.sprite.clearTint();
+    }
+
     if (time >= this.hurtUntil) {
       this.think(time, dt, player);
     }
     this.applyVisuals();
   }
 
+  /** Freeze the enemy for `ms` (Shadow's AGGRESSIVE opening). */
+  stagger(time: number, ms: number): void {
+    if (this.isDead) return;
+    this.staggerUntil = time + ms;
+    this.attackStrikeAt = -1;
+  }
+
+  /** Draw the enemy's attention to a point for `ms` (Shadow's CAUTIOUS taunt). */
+  distractTo(x: number, y: number, time: number, ms: number): void {
+    if (this.isDead) return;
+    this.distractX = x;
+    this.distractY = y;
+    this.distractUntil = time + ms;
+    this.attackStrikeAt = -1;
+    this.sprite.clearTint();
+  }
+
   private think(time: number, dt: number, player: Player): void {
+    // Distraction (CAUTIOUS support): chase the lure instead of the player.
+    if (time < this.distractUntil) {
+      const ldx = this.distractX - this.x;
+      const ldy = this.distractY - this.y;
+      const ld = Math.hypot(ldx, ldy) || 1;
+      if (ld > 30) {
+        this.x = clampWorldX(this.x + (ldx / ld) * COMBAT.enemyChaseSpeed * dt);
+        this.y = clampWorldY(this.y + (ldy / ld) * COMBAT.enemyChaseSpeed * dt);
+      }
+      if (ldx !== 0) this.facing = ldx > 0 ? 1 : -1;
+      return;
+    }
+
     const dx = player.worldX - this.x;
     const dy = player.worldY - this.y;
     const dist = Math.hypot(dx, dy);

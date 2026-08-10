@@ -1,7 +1,9 @@
 import Phaser from "phaser";
-import { COMBAT, ECHO, JUMP, SHADOW } from "../config";
-import { actorDepth, perspectiveScale } from "../systems/space";
+import { COMBAT, ECHO, JUMP, SHADOW, SUPPORT } from "../config";
+import { actorDepth, clampWorldX, clampWorldY, perspectiveScale } from "../systems/space";
 import type { ActionFrame } from "../systems/ActionRecorder";
+import type { PlayStyle } from "../systems/PlayerProfile";
+import type { Enemy } from "./Enemy";
 
 /**
  * 잔영 (Echo Shadow). Replays a snapshot of the player's recent action frames:
@@ -33,6 +35,17 @@ export class Shadow extends Phaser.GameObjects.Container {
   public onAttackStart?: (facing: -1 | 1, x: number, y: number, jumpZ: number) => void;
   /** Fired on a replayed interact frame, routed to the InteractionSystem. */
   public onInteract?: (x: number, y: number) => void;
+
+  // --- Independent support action (second-combat finale, data-driven) ---
+  public isSupporting = false;
+  private supportStyle: PlayStyle = "AGGRESSIVE";
+  private supportTarget: Enemy | null = null;
+  private supportActed = false;
+  private supportLingerUntil = 0;
+  /** Fired once when the Shadow reaches the target and performs the support. */
+  public onSupportAct?: (style: PlayStyle, target: Enemy | null) => void;
+  /** Fired when the support action fully finishes. */
+  public onSupportDone?: () => void;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0);
@@ -70,7 +83,29 @@ export class Shadow extends Phaser.GameObjects.Container {
     this.setVisible(true);
   }
 
-  update(_time: number, _deltaMs: number): void {
+  /**
+   * Begin an independent support action chosen by the PlayerProfile. The Shadow
+   * emerges at (fromX, fromY), moves to the target, and acts once.
+   */
+  startSupport(style: PlayStyle, target: Enemy, fromX: number, fromY: number): void {
+    this.isReplaying = false;
+    this.isSupporting = true;
+    this.supportStyle = style;
+    this.supportTarget = target;
+    this.supportActed = false;
+    this.x = fromX;
+    this.y = fromY;
+    this.jumpZ = 0;
+    this.facing = target.worldX >= fromX ? 1 : -1;
+    this.setVisible(true);
+    this.refreshTransform();
+  }
+
+  update(time: number, deltaMs: number): void {
+    if (this.isSupporting) {
+      this.updateSupport(time, deltaMs);
+      return;
+    }
     if (!this.isReplaying) return;
 
     const f = this.frames[this.index];
@@ -114,6 +149,47 @@ export class Shadow extends Phaser.GameObjects.Container {
     this.isReplaying = false;
     this.frames = [];
     this.setVisible(false);
+  }
+
+  private updateSupport(time: number, deltaMs: number): void {
+    const dt = deltaMs / 1000;
+    const t = this.supportTarget;
+
+    if (!this.supportActed) {
+      const tx = t ? t.worldX : this.x;
+      const ty = t ? t.worldY : this.y;
+      const dx = tx - this.x;
+      const dy = ty - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d > SUPPORT.approachRange) {
+        this.x = clampWorldX(this.x + (dx / d) * SUPPORT.shadowSpeed * dt);
+        this.y = clampWorldY(this.y + (dy / d) * SUPPORT.shadowSpeed * dt);
+        if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+      } else {
+        this.supportActed = true;
+        this.supportLingerUntil = time + SUPPORT.lingerMs;
+        this.onSupportAct?.(this.supportStyle, t);
+      }
+    } else if (time >= this.supportLingerUntil) {
+      this.isSupporting = false;
+      this.supportTarget = null;
+      this.setVisible(false);
+      this.onSupportDone?.();
+    }
+
+    this.refreshTransform();
+  }
+
+  /** Shared transform/tint update used by the support action. */
+  private refreshTransform(): void {
+    this.sprite.y = -this.jumpZ;
+    this.sprite.setFlipX(this.facing === -1);
+    this.sprite.setTintFill(ECHO.shadowTint);
+    const zt = Phaser.Math.Clamp(this.jumpZ / JUMP.maxShadowFadeZ, 0, 1);
+    this.shadow.setScale(1 - 0.45 * zt);
+    this.shadow.setAlpha(SHADOW.alpha * 0.6 * (1 - 0.55 * zt));
+    this.setScale(perspectiveScale(this.y));
+    this.setDepth(actorDepth(this.y));
   }
 
   // --- Melee-attacker surface (mirrors Player) ---

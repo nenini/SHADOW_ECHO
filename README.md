@@ -72,6 +72,14 @@ npm run preview    # 빌드 결과 로컬 미리보기
 - 혼자서는 조금 늦게 도착해 실패 → `Q`로 Shadow가 과거의 레버 작동을 재현해 성공
 - Shadow의 레버 작동은 고정 연출이 아니라 실제 기록→재생 결과
 
+**Adaptive Shadow (적응형 그림자)**
+- 실제 플레이 로그 수집: 공격/대시/점프 횟수, 피격량, 잔영 사용, 적과의 평균 거리
+- 스타일 분류: **AGGRESSIVE**(근접·공격적) / **CAUTIOUS**(거리 유지·피격 적음)
+- 두 번째 전투(관문 너머)의 마지막 적에서 그림자가 **분류 결과에 따라 독립 지원 1회**
+  - AGGRESSIVE → 적을 **경직**시켜 진입 기회 생성
+  - CAUTIOUS → 적의 **시선을 끌어** 공격 기회 생성
+- 이후 그림자 대사: "이렇게 할 거였잖아." (고정 연출이 아니라 실제 로그로 분기)
+
 **기반**
 - Phaser + TypeScript + Vite, 카메라 추적, 다층 Parallax 배경
 - GitHub Pages 빌드/배포 설정 (`.github/workflows/deploy.yml`)
@@ -81,8 +89,8 @@ npm run preview    # 빌드 결과 로컬 미리보기
 
 ## 이후 구현 예정
 
-- 두 번째 전투 + Adaptive Shadow (AGGRESSIVE / CAUTIOUS 분류에 따른 선제 지원 행동)
-- 스토리 시퀀스 및 "이렇게 할 거였잖아." → 마을 → TO BE CONTINUED
+- 스토리 시퀀스: 마을 입구 → 마라("네 그림자는 아니란다.") → 암전 → "잔영 보존 실험 37차 — 대상 HARIN" → TO BE CONTINUED
+- 사운드 / 최종 픽셀아트 에셋 교체 / GitHub Pages 온라인 배포
 
 전체 방향은 [`docs/STORY.md`](docs/STORY.md), 범위는 [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) 참고.
 
@@ -95,7 +103,7 @@ src/
     config.ts          # 게임 설정 · 팔레트 · 좌표/물리/전투 상수
     scenes/            # BootScene, GameScene
     entities/          # Player, Enemy, Shadow, Lever, Door (Container 기반 2.5D)
-    systems/           # space.ts, ActionRecorder.ts, InteractionSystem.ts
+    systems/           # space, ActionRecorder, InteractionSystem, PlayerProfile
     ui/                # (예정) HUD, 대사창
   styles/
 public/assets/         # characters / enemies / environment / ui / audio / effects

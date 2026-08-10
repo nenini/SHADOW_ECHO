@@ -120,6 +120,26 @@ export const COMBAT = {
   knockbackDecayPerSec: 8,
 } as const;
 
+/**
+ * PlayerProfile classification thresholds. Metrics are collected from real play
+ * (attack/dash/jump counts, damage taken, echo uses, average enemy distance) and
+ * used to pick the Shadow's independent support action in the second combat.
+ */
+export const PROFILE = {
+  distThreshold: 170, // avg enemy distance (px): <= is "fights up close"
+  attackThreshold: 4, // min attacks to read as offensive
+  damageThreshold: 2, // <= damage taken reads as "careful"
+} as const;
+
+/** Shadow's independent support action (second combat finale). */
+export const SUPPORT = {
+  shadowSpeed: 320, // px/s while moving to assist
+  approachRange: 46, // stops this close to the target before acting
+  staggerMs: 1700, // AGGRESSIVE: how long the enemy is stunned
+  tauntMs: 2400, // CAUTIOUS: how long the enemy is drawn to the Shadow
+  lingerMs: 800, // Shadow lingers after acting, then fades
+} as const;
+
 /** 잔영(Echo): rolling action recording + Shadow replay. */
 export const ECHO = {
   recordMs: 3000, // how much recent history the Shadow can replay
